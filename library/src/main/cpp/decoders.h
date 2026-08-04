@@ -5,7 +5,7 @@
 #ifndef IMAGEDECODER_DECODERS_H
 #define IMAGEDECODER_DECODERS_H
 
-#include "decoder_headers.h"
+#include "image_format.h"
 #ifdef HAVE_LIBJPEG
 #include "decoder_jpeg.h"
 #endif

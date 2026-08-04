@@ -3,6 +3,7 @@
 //
 
 #include "borders.h"
+#include "decoder_base.h"
 #include "decoders.h"
 #include "java_objects.h"
 #include "java_stream.h"
@@ -55,17 +56,17 @@ Java_tachiyomi_decoder_ImageDecoder_nativeNewInstance(JNIEnv* env, jclass,
     if (false) {
     } // This should be optimized out by the compiler.
 #ifdef HAVE_LIBJPEG
-    else if (is_jpeg(stream->bytes)) {
+    else if (is_jpeg(stream->bytes, stream->size)) {
       decoder = new JpegDecoder(std::move(stream), cropBorders, targetProfile);
     }
 #endif
 #ifdef HAVE_LIBPNG
-    else if (is_png(stream->bytes)) {
+    else if (is_png(stream->bytes, stream->size)) {
       decoder = new PngDecoder(std::move(stream), cropBorders, targetProfile);
     }
 #endif
 #ifdef HAVE_LIBWEBP
-    else if (is_webp(stream->bytes)) {
+    else if (is_webp(stream->bytes, stream->size)) {
       decoder = new WebpDecoder(std::move(stream), cropBorders, targetProfile);
     }
 #endif
@@ -75,7 +76,7 @@ Java_tachiyomi_decoder_ImageDecoder_nativeNewInstance(JNIEnv* env, jclass,
     }
 #endif
 #ifdef HAVE_LIBJXL
-    else if (is_jxl(stream->bytes)) {
+    else if (is_jxl(stream->bytes, stream->size)) {
       decoder =
           new JpegxlDecoder(std::move(stream), cropBorders, targetProfile);
     }
@@ -171,28 +172,31 @@ Java_tachiyomi_decoder_ImageDecoder_nativeRecycle(JNIEnv*, jobject,
 extern "C" JNIEXPORT jobject JNICALL
 Java_tachiyomi_decoder_ImageDecoder_nativeFindType(JNIEnv* env, jclass,
                                                    jbyteArray array) {
-  uint32_t toRead = 32;
-  uint32_t size = env->GetArrayLength(array);
+  constexpr uint32_t maximumSniffBytes = 4096;
+  uint32_t size =
+      std::min<uint32_t>(env->GetArrayLength(array), maximumSniffBytes);
 
-  if (size < toRead) {
-    LOGW("Not enough bytes to parse info");
+  if (size == 0) {
     return nullptr;
   }
 
-  auto _bytes = std::make_unique<uint8_t[]>(toRead);
+  auto _bytes = std::make_unique<uint8_t[]>(size);
   auto bytes = _bytes.get();
-  env->GetByteArrayRegion(array, 0, toRead, (jbyte*)bytes);
+  env->GetByteArrayRegion(array, 0, size, (jbyte*)bytes);
 
-  if (is_jpeg(bytes)) {
+  if (is_jpeg(bytes, size)) {
     return create_image_type(env, 0, false);
-  } else if (is_png(bytes)) {
+  } else if (is_png(bytes, size)) {
     return create_image_type(env, 1, false);
-  } else if (is_webp(bytes)) {
+  } else if (is_webp(bytes, size)) {
     try {
 #ifdef HAVE_LIBWEBP
-      auto decoder = std::make_unique<WebpDecoder>(
-          std::make_shared<Stream>(bytes, size), false, nullptr);
-      return create_image_type(env, 2, decoder->info.isAnimated);
+      if (size >= 32) {
+        auto decoder = std::make_unique<WebpDecoder>(
+            std::make_shared<Stream>(bytes, size), false, nullptr);
+        return create_image_type(env, 2, decoder->info.isAnimated);
+      }
+      return create_image_type(env, 2, false);
 #else
       throw std::runtime_error("WebP decoder not available");
 #endif
@@ -200,19 +204,14 @@ Java_tachiyomi_decoder_ImageDecoder_nativeFindType(JNIEnv* env, jclass,
       LOGW("Failed to parse WebP header. Falling back to non animated WebP");
       return create_image_type(env, 2, false);
     }
-  } else if (is_gif(bytes)) {
+  } else if (is_gif(bytes, size)) {
     return create_image_type(env, 3, true);
-  } else if (is_jxl(bytes)) {
+  } else if (is_jxl(bytes, size)) {
     return create_image_type(env, 6, false);
-  }
-
-  switch (get_ftyp_image_type(bytes, toRead)) {
-  case ftyp_image_type_heif:
+  } else if (is_heif(bytes, size)) {
     return create_image_type(env, 4, false);
-  case ftyp_image_type_avif:
+  } else if (is_avif(bytes, size)) {
     return create_image_type(env, 5, false);
-  case ftyp_image_type_no:
-    break;
   }
 
   LOGW("Failed to find image type");

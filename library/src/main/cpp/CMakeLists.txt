@@ -15,6 +15,9 @@ add_library(imagedecoder SHARED
   java_stream.cpp
   java_wrapper.cpp
   java_objects.cpp
+  image_format.cpp
+  incremental_decoder.cpp
+  incremental_java_wrapper.cpp
   borders.cpp
   row_convert.cpp
 )
