@@ -1,6 +1,7 @@
 #include "image_format.h"
 
 #include <algorithm>
+#include <iterator>
 
 namespace {
 

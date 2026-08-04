@@ -8,5 +8,9 @@ FetchContent_Declare(lcms2
 
 FetchContent_MakeAvailable(lcms2)
 
-target_include_directories(imagedecoder PRIVATE ${lcms2_BINARY_DIR} ${lcms2_SOURCE_DIR})
+target_include_directories(imagedecoder PRIVATE
+  ${lcms2_BINARY_DIR}
+  ${lcms2_SOURCE_DIR}
+  ${lcms2_SOURCE_DIR}/include
+)
 target_link_libraries(imagedecoder lcms2)

@@ -16,11 +16,15 @@ add_library(imagedecoder SHARED
   java_wrapper.cpp
   java_objects.cpp
   image_format.cpp
-  incremental_decoder.cpp
+  incremental/color_transform.cpp
+  incremental/image_canvas.cpp
+  incremental/session.cpp
   incremental_java_wrapper.cpp
   borders.cpp
   row_convert.cpp
 )
+
+target_include_directories(imagedecoder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Change the default path of fetch content to avoid downloading the same dependencies per architecture
 get_filename_component(deps "../_deps" REALPATH BASE_DIR "${CMAKE_BINARY_DIR}")
@@ -31,17 +35,26 @@ add_subdirectory(lcms)
 if(WITH_JPEG)
   add_subdirectory(libjpeg-turbo)
   add_definitions(-DHAVE_LIBJPEG)
-  target_sources(imagedecoder PRIVATE decoder_jpeg.cpp)
+  target_sources(imagedecoder PRIVATE
+    decoder_jpeg.cpp
+    incremental/jpeg_decoder.cpp
+  )
 endif()
 if(WITH_PNG)
   add_subdirectory(libpng)
   add_definitions(-DHAVE_LIBPNG)
-  target_sources(imagedecoder PRIVATE decoder_png.cpp)
+  target_sources(imagedecoder PRIVATE
+    decoder_png.cpp
+    incremental/png_decoder.cpp
+  )
 endif()
 if(WITH_WEBP)
   add_subdirectory(libwebp)
   add_definitions(-DHAVE_LIBWEBP)
-  target_sources(imagedecoder PRIVATE decoder_webp.cpp)
+  target_sources(imagedecoder PRIVATE
+    decoder_webp.cpp
+    incremental/webp_decoder.cpp
+  )
 endif()
 if(WITH_HEIF OR WITH_AVIF)
   add_subdirectory(libheif)

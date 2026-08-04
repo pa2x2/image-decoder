@@ -1,5 +1,8 @@
-#include "incremental_decoder.h"
+#include "incremental/session.h"
+#include "java_objects.h"
 
+#include <android/bitmap.h>
+#include <cstring>
 #include <jni.h>
 #include <memory>
 #include <utility>
@@ -11,6 +14,7 @@ constexpr jsize kMaximumDisplayProfileBytes = 4 * 1024 * 1024;
 constexpr jint kMaximumOutputDimension = 32768;
 constexpr jlong kMaximumBitmapPixels = 67108864;
 constexpr jint kMaximumAppendBytes = 64 * 1024;
+constexpr jsize kIncrementalUpdateValueCount = 16;
 
 void throw_exception(JNIEnv* env, const char* className, const char* message) {
   const jclass exceptionClass = env->FindClass(className);
@@ -147,11 +151,12 @@ Java_tachiyomi_decoder_incremental_IncrementalImageDecoder_nativeAppendDirectBuf
                                             endOfInput == JNI_TRUE));
 }
 
-extern "C" JNIEXPORT jintArray JNICALL
+extern "C" JNIEXPORT jobject JNICALL
 Java_tachiyomi_decoder_incremental_IncrementalImageDecoder_nativePollUpdate(
-    JNIEnv* env, jobject, jlong nativePtr) {
+    JNIEnv* env, jobject, jlong nativePtr, jlongArray updateValues) {
   auto* session = reinterpret_cast<IncrementalDecoderSession*>(nativePtr);
-  if (session == nullptr) {
+  if (session == nullptr || updateValues == nullptr ||
+      env->GetArrayLength(updateValues) < kIncrementalUpdateValueCount) {
     throw_exception(env, "java/lang/IllegalStateException",
                     "Incremental decoder is unavailable");
     return nullptr;
@@ -162,16 +167,88 @@ Java_tachiyomi_decoder_incremental_IncrementalImageDecoder_nativePollUpdate(
     return nullptr;
   }
 
-  const jint values[] = {
-      static_cast<jint>(update.type),
-      static_cast<jint>(update.format),
-      static_cast<jint>(update.capabilities),
+  jlong values[kIncrementalUpdateValueCount] = {
+      static_cast<jlong>(update.type),
+      update.format,
+      update.capabilities,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      -1,
+      -1,
+      0,
+      0,
+      0,
+      0,
+      0,
   };
-  jintArray result = env->NewIntArray(3);
-  if (result != nullptr) {
-    env->SetIntArrayRegion(result, 0, 3, values);
+  if (update.info != nullptr) {
+    values[3] = update.info->width;
+    values[4] = update.info->height;
+    values[5] = update.info->outputWidth;
+    values[6] = update.info->outputHeight;
+    values[7] = update.info->isAnimated;
+    values[8] = update.info->hasAlpha;
+    values[9] = update.info->frameCount;
+    values[10] = update.info->loopCount;
   }
-  return result;
+  jobject bitmap = nullptr;
+  if (update.snapshot != nullptr) {
+    values[11] = update.snapshot->generation;
+    values[12] = update.snapshot->left;
+    values[13] = update.snapshot->top;
+    values[14] = update.snapshot->right;
+    values[15] = update.snapshot->bottom;
+
+    const size_t expectedSize = static_cast<size_t>(update.snapshot->width) *
+                                update.snapshot->height * 4;
+    if (update.snapshot->rgba == nullptr ||
+        update.snapshot->rgba->size() != expectedSize) {
+      throw_exception(env, "java/lang/IllegalStateException",
+                      "Incremental bitmap size is invalid");
+      return nullptr;
+    }
+    bitmap =
+        create_bitmap(env, update.snapshot->width, update.snapshot->height);
+    if (bitmap == nullptr) {
+      throw_exception(env, "java/lang/OutOfMemoryError",
+                      "Failed to allocate incremental bitmap");
+      return nullptr;
+    }
+
+    AndroidBitmapInfo bitmapInfo{};
+    void* bitmapPixels = nullptr;
+    const size_t sourceStride = static_cast<size_t>(update.snapshot->width) * 4;
+    if (AndroidBitmap_getInfo(env, bitmap, &bitmapInfo) !=
+            ANDROID_BITMAP_RESULT_SUCCESS ||
+        bitmapInfo.stride < sourceStride ||
+        AndroidBitmap_lockPixels(env, bitmap, &bitmapPixels) !=
+            ANDROID_BITMAP_RESULT_SUCCESS ||
+        bitmapPixels == nullptr) {
+      env->DeleteLocalRef(bitmap);
+      throw_exception(env, "java/lang/IllegalStateException",
+                      "Failed to access incremental bitmap pixels");
+      return nullptr;
+    }
+    for (uint32_t row = 0; row < update.snapshot->height; ++row) {
+      std::memcpy(static_cast<uint8_t*>(bitmapPixels) + row * bitmapInfo.stride,
+                  update.snapshot->rgba->data() + row * sourceStride,
+                  sourceStride);
+    }
+    AndroidBitmap_unlockPixels(env, bitmap);
+  }
+  env->SetLongArrayRegion(updateValues, 0, kIncrementalUpdateValueCount,
+                          values);
+  if (env->ExceptionCheck()) {
+    if (bitmap != nullptr) {
+      env->DeleteLocalRef(bitmap);
+    }
+    return nullptr;
+  }
+  return bitmap;
 }
 
 extern "C" JNIEXPORT void JNICALL

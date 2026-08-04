@@ -1,5 +1,6 @@
 package tachiyomi.decoder.incremental
 
+import android.graphics.Bitmap
 import tachiyomi.decoder.Format
 import java.io.Closeable
 import java.nio.ByteBuffer
@@ -9,7 +10,8 @@ import java.nio.ByteBuffer
  *
  * Calls are serialized per instance. Input buffers are consumed synchronously
  * and may be reused after [append] returns. Updates own their published bitmap
- * snapshots and are retrieved with [pollUpdate].
+ * snapshots and are retrieved with [pollUpdate]. When input outruns polling,
+ * pending still-image changes are coalesced into the latest bounded snapshot.
  */
 class IncrementalImageDecoder private constructor(
   private var nativePtr: Long,
@@ -17,6 +19,7 @@ class IncrementalImageDecoder private constructor(
 
   private val lock = Any()
   private val transferBuffer = ByteArray(NATIVE_APPEND_CHUNK_SIZE)
+  private val updateValues = LongArray(UPDATE_VALUE_COUNT)
   private var inputEnded = false
 
   val isClosed: Boolean
@@ -111,24 +114,42 @@ class IncrementalImageDecoder private constructor(
   /** Returns the next decoder update, or null when no update is pending. */
   fun pollUpdate(): IncrementalDecodeUpdate? = synchronized(lock) {
     checkOpen()
-    val update = nativePollUpdate(nativePtr) ?: return@synchronized null
-    check(update.size == UPDATE_VALUE_COUNT) {
-      "Unexpected native incremental update size ${update.size}"
-    }
-    val format = update[UPDATE_FORMAT_INDEX]
+    updateValues.fill(0)
+    val bitmap = nativePollUpdate(nativePtr, updateValues)
+    val updateType = updateValues[UPDATE_TYPE_INDEX].toInt()
+    if (updateType == UPDATE_NONE) return@synchronized null
+    val format = updateValues[UPDATE_FORMAT_INDEX].toInt()
       .takeIf { it >= 0 }
       ?.let(Format::from)
-    when (update[UPDATE_TYPE_INDEX]) {
+    when (updateType) {
       UPDATE_FORMAT_DETECTED -> IncrementalDecodeUpdate.FormatDetected(
         format = checkNotNull(format),
         capabilities = IncrementalDecodeCapabilities(
-          stillImageUpdates = update[UPDATE_CAPABILITIES_INDEX] and CAPABILITY_STILL != 0,
-          animationFrames = update[UPDATE_CAPABILITIES_INDEX] and CAPABILITY_ANIMATION != 0,
+          stillImageUpdates =
+            updateValues[UPDATE_CAPABILITIES_INDEX].toInt() and CAPABILITY_STILL != 0,
+          animationFrames =
+            updateValues[UPDATE_CAPABILITIES_INDEX].toInt() and CAPABILITY_ANIMATION != 0,
         ),
+      )
+      UPDATE_METADATA_AVAILABLE -> IncrementalDecodeUpdate.MetadataAvailable(
+        info = readImageInfo(checkNotNull(format)),
+      )
+      UPDATE_STILL_IMAGE_AVAILABLE -> IncrementalDecodeUpdate.StillImageAvailable(
+        bitmap = checkNotNull(bitmap),
+        updatedRegion = IncrementalImageRegion(
+          left = updateValues[UPDATE_REGION_LEFT_INDEX].toInt(),
+          top = updateValues[UPDATE_REGION_TOP_INDEX].toInt(),
+          right = updateValues[UPDATE_REGION_RIGHT_INDEX].toInt(),
+          bottom = updateValues[UPDATE_REGION_BOTTOM_INDEX].toInt(),
+        ),
+        generation = updateValues[UPDATE_GENERATION_INDEX],
+      )
+      UPDATE_COMPLETE -> IncrementalDecodeUpdate.Complete(
+        info = readImageInfo(checkNotNull(format)),
       )
       UPDATE_UNSUPPORTED -> IncrementalDecodeUpdate.Unsupported(format)
       UPDATE_ERROR -> IncrementalDecodeUpdate.Error("Incremental decoder failed")
-      else -> error("Unknown native incremental update ${update[UPDATE_TYPE_INDEX]}")
+      else -> error("Unknown native incremental update $updateType")
     }
   }
 
@@ -148,6 +169,18 @@ class IncrementalImageDecoder private constructor(
     check(nativePtr != 0L) { "The incremental decoder has been closed" }
   }
 
+  private fun readImageInfo(format: Format) = IncrementalImageInfo(
+    format = format,
+    width = updateValues[UPDATE_WIDTH_INDEX].toInt(),
+    height = updateValues[UPDATE_HEIGHT_INDEX].toInt(),
+    outputWidth = updateValues[UPDATE_OUTPUT_WIDTH_INDEX].toInt(),
+    outputHeight = updateValues[UPDATE_OUTPUT_HEIGHT_INDEX].toInt(),
+    isAnimated = updateValues[UPDATE_ANIMATED_INDEX] != 0L,
+    hasAlpha = updateValues[UPDATE_ALPHA_INDEX] != 0L,
+    frameCount = updateValues[UPDATE_FRAME_COUNT_INDEX].takeIf { it >= 0 }?.toInt(),
+    loopCount = updateValues[UPDATE_LOOP_COUNT_INDEX].takeIf { it >= 0 }?.toInt(),
+  )
+
   private external fun nativeAppendByteArray(
     nativePtr: Long,
     bytes: ByteArray,
@@ -164,7 +197,7 @@ class IncrementalImageDecoder private constructor(
     endOfInput: Boolean,
   )
 
-  private external fun nativePollUpdate(nativePtr: Long): IntArray?
+  private external fun nativePollUpdate(nativePtr: Long, values: LongArray): Bitmap?
 
   private external fun nativeRecycle(nativePtr: Long)
 
@@ -200,11 +233,28 @@ private val EMPTY_INPUT = ByteArray(0)
 private const val UPDATE_TYPE_INDEX = 0
 private const val UPDATE_FORMAT_INDEX = 1
 private const val UPDATE_CAPABILITIES_INDEX = 2
-private const val UPDATE_VALUE_COUNT = 3
+private const val UPDATE_WIDTH_INDEX = 3
+private const val UPDATE_HEIGHT_INDEX = 4
+private const val UPDATE_OUTPUT_WIDTH_INDEX = 5
+private const val UPDATE_OUTPUT_HEIGHT_INDEX = 6
+private const val UPDATE_ANIMATED_INDEX = 7
+private const val UPDATE_ALPHA_INDEX = 8
+private const val UPDATE_FRAME_COUNT_INDEX = 9
+private const val UPDATE_LOOP_COUNT_INDEX = 10
+private const val UPDATE_GENERATION_INDEX = 11
+private const val UPDATE_REGION_LEFT_INDEX = 12
+private const val UPDATE_REGION_TOP_INDEX = 13
+private const val UPDATE_REGION_RIGHT_INDEX = 14
+private const val UPDATE_REGION_BOTTOM_INDEX = 15
+private const val UPDATE_VALUE_COUNT = 16
 
+private const val UPDATE_NONE = 0
 private const val UPDATE_FORMAT_DETECTED = 1
 private const val UPDATE_UNSUPPORTED = 2
 private const val UPDATE_ERROR = 3
+private const val UPDATE_METADATA_AVAILABLE = 4
+private const val UPDATE_STILL_IMAGE_AVAILABLE = 5
+private const val UPDATE_COMPLETE = 6
 
 private const val CAPABILITY_STILL = 1
 private const val CAPABILITY_ANIMATION = 1 shl 1

@@ -1,40 +1,18 @@
-#ifndef IMAGEDECODER_INCREMENTAL_DECODER_H
-#define IMAGEDECODER_INCREMENTAL_DECODER_H
+#ifndef IMAGEDECODER_INCREMENTAL_SESSION_H
+#define IMAGEDECODER_INCREMENTAL_SESSION_H
 
-#include "image_format.h"
+#include "incremental/format_decoder.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <vector>
-
-enum class IncrementalUpdateType : int32_t {
-  FormatDetected = 1,
-  Unsupported = 2,
-  Error = 3,
-};
-
-enum IncrementalCapability : int32_t {
-  IncrementalCapabilityStill = 1,
-  IncrementalCapabilityAnimation = 1 << 1,
-};
-
-struct IncrementalUpdate {
-  IncrementalUpdateType type;
-  int32_t format;
-  int32_t capabilities;
-};
 
 enum class IncrementalAppendResult {
   Accepted,
   InputAlreadyEnded,
   InputTooLarge,
-};
-
-struct IncrementalDecodeOptionsNative {
-  uint32_t preferredOutputWidth;
-  uint64_t maximumBitmapPixels;
-  std::vector<uint8_t> displayProfile;
 };
 
 class IncrementalDecoderSession {
@@ -47,14 +25,20 @@ public:
 
 private:
   void detectFormat(bool endOfInput);
+  void startDecoder(ImageFormat format, bool endOfInput);
+  void appendToDecoder(const uint8_t* bytes, size_t size, bool endOfInput);
+  void publishUpdate(IncrementalUpdate&& update);
   void publishUnsupported(int32_t format);
+  void publishError(int32_t format);
 
   IncrementalDecodeOptionsNative options;
-  std::vector<uint8_t> sniffBuffer;
+  std::vector<uint8_t> pendingInput;
   std::deque<IncrementalUpdate> updates;
+  std::unique_ptr<IncrementalFormatDecoder> decoder;
   uint64_t totalInputBytes = 0;
+  int32_t detectedFormat = -1;
   bool inputEnded = false;
   bool terminal = false;
 };
 
-#endif // IMAGEDECODER_INCREMENTAL_DECODER_H
+#endif // IMAGEDECODER_INCREMENTAL_SESSION_H
