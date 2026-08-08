@@ -28,5 +28,9 @@ tapmoc {
 }
 
 mavenPublishing {
-    coordinates("com.github.mihonapp", "image-decoder", "1.0.0-SNAPSHOT")
+    coordinates(
+        "com.github.mihonapp",
+        "image-decoder",
+        providers.gradleProperty("publicationVersion").getOrElse("1.0.0-SNAPSHOT"),
+    )
 }
