@@ -16,12 +16,14 @@ set(PRODUCTION_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../main/cpp")
 
 add_executable(incremental_decoder_host_tests
   incremental/fixtures/image_pattern.cpp
+  incremental/fixtures/gif_fixture.cpp
   incremental/fixtures/jpeg_fixture.cpp
   incremental/fixtures/jxl_fixture.cpp
   incremental/fixtures/png_fixture.cpp
   incremental/fixtures/webp_fixture.cpp
   incremental/support/decode_harness.cpp
   incremental/jpeg_decoder_test.cpp
+  incremental/gif_decoder_test.cpp
   incremental/jxl_decoder_test.cpp
   incremental/png_decoder_test.cpp
   incremental/session_test.cpp

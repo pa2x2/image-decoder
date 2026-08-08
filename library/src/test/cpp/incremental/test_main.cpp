@@ -4,6 +4,7 @@
 #include <string_view>
 
 void run_jpeg_decoder_tests();
+void run_gif_decoder_tests();
 void run_jxl_decoder_tests();
 void run_jxl_decoder_benchmark();
 void run_png_decoder_tests();
@@ -36,12 +37,13 @@ int main(int argc, char** argv) {
     }
   }
   const bool jpegPassed = run_suite("incremental JPEG", run_jpeg_decoder_tests);
+  const bool gifPassed = run_suite("incremental GIF", run_gif_decoder_tests);
   const bool jxlPassed = run_suite("incremental JXL", run_jxl_decoder_tests);
   const bool pngPassed = run_suite("incremental PNG", run_png_decoder_tests);
   const bool webpPassed = run_suite("incremental WebP", run_webp_decoder_tests);
   const bool sessionPassed =
       run_suite("incremental session", run_session_tests);
-  return jpegPassed && jxlPassed && pngPassed && webpPassed && sessionPassed
+  return jpegPassed && gifPassed && jxlPassed && pngPassed && webpPassed && sessionPassed
              ? 0
              : 1;
 }
