@@ -51,14 +51,29 @@ void run_webp_case(bool lossless) {
   require_truncated_webp_fails(fixture);
 }
 
-void require_animated_webp_falls_back() {
-  const auto encoded = make_animated_webp_fallback_fixture();
-  const auto trace =
-      decode_in_chunks(kWebpFactory, full_size_options(192, 384), encoded, 13);
-  require_condition(trace.result == IncrementalBackendResult::Unsupported,
-                    "animated WebP must fall back to the animation pipeline");
-  require_condition(!trace.metadata.has_value() && trace.stillUpdates.empty(),
-                    "animated WebP fallback must not advertise static output");
+void require_animated_webp_decode() {
+  const auto fixture = make_animated_webp_fixture();
+  const auto trace = decode_in_chunks(
+      kWebpFactory, full_size_options(fixture.width, fixture.height),
+      fixture.encoded, 487);
+  require_condition(trace.result == IncrementalBackendResult::Complete,
+                    "animated WebP must complete incrementally");
+  require_condition(trace.metadata.has_value() && trace.metadata->isAnimated,
+                    "animated WebP metadata must advertise animation");
+  require_condition(trace.completionInfo.has_value() &&
+                        trace.completionInfo->loopCount == fixture.loopCount,
+                    "animated WebP must preserve its loop count");
+  require_condition(trace.animationFrames.size() ==
+                        fixture.expectedFrames.size(),
+                    "animated WebP must publish every display frame");
+  for (size_t index = 0; index < trace.animationFrames.size(); ++index) {
+    require_condition(trace.animationFrames[index].durationMillis ==
+                          fixture.durationsMillis[index],
+                      "animated WebP must preserve frame durations");
+    require_condition(maximum_channel_error(trace.animationFrames[index].rgba,
+                                            fixture.expectedFrames[index]) <= 1,
+                      "lossless animated WebP must preserve RGBA pixels");
+  }
 }
 
 } // namespace
@@ -66,5 +81,5 @@ void require_animated_webp_falls_back() {
 void run_webp_decoder_tests() {
   run_webp_case(false);
   run_webp_case(true);
-  require_animated_webp_falls_back();
+  require_animated_webp_decode();
 }

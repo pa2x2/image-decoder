@@ -1,4 +1,5 @@
 #include "fixtures/jpeg_fixture.h"
+#include "fixtures/jxl_fixture.h"
 #include "incremental/session.h"
 #include "support/decode_harness.h"
 
@@ -103,6 +104,33 @@ void require_session_reports_truncation() {
                     "truncated session must not publish completion");
 }
 
+void require_session_advertises_and_decodes_jxl() {
+  const auto fixture = make_jxl_still_fixture(false);
+  IncrementalDecoderSession session(
+      full_size_options(fixture.width, fixture.height));
+  require_condition(session.append(fixture.encoded.data(),
+                                   fixture.encoded.size(),
+                                   true) == IncrementalAppendResult::Accepted,
+                    "session must accept complete JXL input");
+
+  const auto trace = drain_updates(session);
+  require_condition(event_count(trace, IncrementalUpdateType::FormatDetected) ==
+                        1,
+                    "session must detect JXL once");
+  require_condition(
+      (trace.detectedCapabilities & IncrementalCapabilityStill) != 0 &&
+          (trace.detectedCapabilities & IncrementalCapabilityAnimation) != 0,
+      "JXL session must advertise still and animation updates");
+  require_condition(
+      event_count(trace, IncrementalUpdateType::StillImageAvailable) == 1 &&
+          event_count(trace, IncrementalUpdateType::Complete) == 1,
+      "JXL session must publish pixels and completion");
+  require_condition(
+      event_count(trace, IncrementalUpdateType::Error) == 0 &&
+          event_count(trace, IncrementalUpdateType::Unsupported) == 0,
+      "valid JXL session must not fall back or fail");
+}
+
 void require_session_rejects_unknown_format() {
   const std::vector<uint8_t> unknown = {'n', 'o', 't', '-', 'a', 'n',
                                         '-', 'i', 'm', 'a', 'g', 'e'};
@@ -125,5 +153,6 @@ void require_session_rejects_unknown_format() {
 void run_session_tests() {
   require_session_completion_and_coalescing();
   require_session_reports_truncation();
+  require_session_advertises_and_decodes_jxl();
   require_session_rejects_unknown_format();
 }

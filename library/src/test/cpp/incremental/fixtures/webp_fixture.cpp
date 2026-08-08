@@ -5,20 +5,14 @@
 
 #include <webp/decode.h>
 #include <webp/encode.h>
+#include <webp/mux.h>
 
-#include <array>
 #include <cstddef>
+#include <memory>
 #include <utility>
 #include <vector>
 
 namespace {
-
-void write_little_endian_u32(uint8_t* output, uint32_t value) {
-  output[0] = static_cast<uint8_t>(value);
-  output[1] = static_cast<uint8_t>(value >> 8);
-  output[2] = static_cast<uint8_t>(value >> 16);
-  output[3] = static_cast<uint8_t>(value >> 24);
-}
 
 std::vector<uint8_t> encode_webp(const std::vector<uint8_t>& rgba,
                                  bool lossless) {
@@ -64,15 +58,69 @@ EncodedImageFixture make_webp_fixture(bool lossless) {
   };
 }
 
-std::vector<uint8_t> make_animated_webp_fallback_fixture() {
-  auto webp = make_webp_fixture(false).encoded;
-  require_condition(webp.size() >= 12,
-                    "WebP fixture must contain a RIFF header");
-  const std::array<uint8_t, 14> animationChunk = {
-      'A', 'N', 'I', 'M', 6, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+AnimatedWebpFixture make_animated_webp_fixture() {
+  constexpr int32_t loopCount = 2;
+  const std::vector<uint64_t> durationsMillis = {90, 160};
+  std::vector<std::vector<uint8_t>> frames;
+  frames.push_back(make_fixture_pattern(true));
+  auto secondFrame = frames.front();
+  for (size_t offset = 0; offset < secondFrame.size(); offset += 4) {
+    std::swap(secondFrame[offset], secondFrame[offset + 1]);
+  }
+  frames.push_back(std::move(secondFrame));
+
+  WebPAnimEncoderOptions options;
+  require_condition(WebPAnimEncoderOptionsInit(&options) != 0,
+                    "animated WebP options must initialize");
+  options.anim_params.loop_count = loopCount;
+  auto encoder =
+      std::unique_ptr<WebPAnimEncoder, decltype(&WebPAnimEncoderDelete)>(
+          WebPAnimEncoderNew(kFixtureWidth, kFixtureHeight, &options),
+          WebPAnimEncoderDelete);
+  require_condition(encoder != nullptr,
+                    "animated WebP encoder must be created");
+
+  WebPConfig config;
+  require_condition(WebPConfigInit(&config) != 0,
+                    "animated WebP config must initialize");
+  config.lossless = 1;
+  config.quality = 100.0F;
+  require_condition(WebPValidateConfig(&config) != 0,
+                    "animated WebP config must be valid");
+
+  int timestamp = 0;
+  for (size_t index = 0; index < frames.size(); ++index) {
+    WebPPicture picture;
+    require_condition(WebPPictureInit(&picture) != 0,
+                      "animated WebP picture must initialize");
+    picture.use_argb = 1;
+    picture.width = kFixtureWidth;
+    picture.height = kFixtureHeight;
+    require_condition(WebPPictureImportRGBA(&picture, frames[index].data(),
+                                            kFixtureWidth * 4) != 0,
+                      "animated WebP pixels must import");
+    const bool added =
+        WebPAnimEncoderAdd(encoder.get(), &picture, timestamp, &config) != 0;
+    WebPPictureFree(&picture);
+    require_condition(added, "animated WebP frame must encode");
+    timestamp += static_cast<int>(durationsMillis[index]);
+  }
+  require_condition(
+      WebPAnimEncoderAdd(encoder.get(), nullptr, timestamp, nullptr) != 0,
+      "animated WebP timeline must close");
+  WebPData encodedData;
+  WebPDataInit(&encodedData);
+  require_condition(WebPAnimEncoderAssemble(encoder.get(), &encodedData) != 0,
+                    "animated WebP must assemble");
+  std::vector<uint8_t> encoded(encodedData.bytes,
+                               encodedData.bytes + encodedData.size);
+  WebPDataClear(&encodedData);
+  return AnimatedWebpFixture{
+      .width = kFixtureWidth,
+      .height = kFixtureHeight,
+      .loopCount = loopCount,
+      .durationsMillis = durationsMillis,
+      .expectedFrames = std::move(frames),
+      .encoded = std::move(encoded),
   };
-  webp.insert(webp.begin() + 12, animationChunk.begin(), animationChunk.end());
-  write_little_endian_u32(webp.data() + 4,
-                          static_cast<uint32_t>(webp.size() - 8));
-  return webp;
 }

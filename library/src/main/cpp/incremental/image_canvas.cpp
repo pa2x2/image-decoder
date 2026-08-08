@@ -140,6 +140,22 @@ IncrementalImageCanvas::takeSnapshot() {
   return snapshot;
 }
 
+std::unique_ptr<IncrementalPixelSnapshot>
+IncrementalImageCanvas::takeFullSnapshot() {
+  auto snapshot =
+      std::make_unique<IncrementalPixelSnapshot>(IncrementalPixelSnapshot{
+          .width = outputWidthValue,
+          .height = outputHeightValue,
+          .left = 0,
+          .top = 0,
+          .right = outputWidthValue,
+          .bottom = outputHeightValue,
+          .generation = ++generation,
+          .rgba = std::make_shared<std::vector<uint8_t>>(*pixels)});
+  dirty = false;
+  return snapshot;
+}
+
 void IncrementalImageCanvas::markDirty(uint32_t x, uint32_t y) {
   if (!dirty) {
     dirtyLeft = x;

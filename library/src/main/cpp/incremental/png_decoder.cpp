@@ -251,6 +251,7 @@ private:
         .capabilities = 0,
         .info = nullptr,
         .snapshot = nullptr,
+        .animationFrame = nullptr,
     };
     update.info = std::make_unique<IncrementalImageInfoNative>(
         IncrementalImageInfoNative{.format = ImageFormat::Png,
@@ -277,6 +278,7 @@ private:
         .capabilities = 0,
         .info = nullptr,
         .snapshot = nullptr,
+        .animationFrame = nullptr,
     };
     update.snapshot = std::move(snapshot);
     pendingUpdates.push_back(std::move(update));

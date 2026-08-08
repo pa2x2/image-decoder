@@ -53,14 +53,29 @@ void run_png_case(bool adam7) {
   require_truncated_png_fails(fixture);
 }
 
-void require_apng_falls_back() {
-  const auto encoded = make_apng_fallback_fixture();
-  const auto trace =
-      decode_in_chunks(kPngFactory, full_size_options(192, 384), encoded, 17);
-  require_condition(trace.result == IncrementalBackendResult::Unsupported,
-                    "APNG must fall back to the animation pipeline");
-  require_condition(!trace.metadata.has_value() && trace.stillUpdates.empty(),
-                    "APNG fallback must not advertise static output");
+void require_apng_decode() {
+  const auto fixture = make_animated_png_fixture();
+  const auto trace = decode_in_chunks(
+      kPngFactory, full_size_options(fixture.width, fixture.height),
+      fixture.encoded, 521);
+  require_condition(trace.result == IncrementalBackendResult::Complete,
+                    "APNG must complete incrementally");
+  require_condition(trace.metadata.has_value() && trace.metadata->isAnimated,
+                    "APNG metadata must advertise animation");
+  require_condition(trace.completionInfo.has_value() &&
+                        trace.completionInfo->loopCount == fixture.loopCount,
+                    "APNG must preserve its loop count");
+  require_condition(trace.animationFrames.size() ==
+                        fixture.expectedFrames.size(),
+                    "APNG must publish every display frame");
+  for (size_t index = 0; index < trace.animationFrames.size(); ++index) {
+    require_condition(trace.animationFrames[index].durationMillis ==
+                          fixture.durationsMillis[index],
+                      "APNG must preserve frame durations");
+    require_condition(maximum_channel_error(trace.animationFrames[index].rgba,
+                                            fixture.expectedFrames[index]) <= 1,
+                      "APNG frames must preserve RGBA pixels");
+  }
 }
 
 } // namespace
@@ -68,5 +83,5 @@ void require_apng_falls_back() {
 void run_png_decoder_tests() {
   run_png_case(false);
   run_png_case(true);
-  require_apng_falls_back();
+  require_apng_decode();
 }

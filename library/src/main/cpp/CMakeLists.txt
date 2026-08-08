@@ -68,7 +68,10 @@ endif()
 if(WITH_JXL)
   add_subdirectory(libjxl)
   add_definitions(-DHAVE_LIBJXL)
-  target_sources(imagedecoder PRIVATE decoder_jxl.cpp)
+  target_sources(imagedecoder PRIVATE
+    decoder_jxl.cpp
+    incremental/jxl_decoder.cpp
+  )
 endif()
 
 target_link_libraries(imagedecoder android jnigraphics log)

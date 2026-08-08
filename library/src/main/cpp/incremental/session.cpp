@@ -5,6 +5,9 @@
 #ifdef HAVE_LIBJPEG
 #include "incremental/jpeg_decoder.h"
 #endif
+#ifdef HAVE_LIBJXL
+#include "incremental/jxl_decoder.h"
+#endif
 #ifdef HAVE_LIBPNG
 #include "incremental/png_decoder.h"
 #endif
@@ -32,6 +35,10 @@ int32_t capabilities_for(ImageFormat format) {
   case ImageFormat::Jpeg:
     return IncrementalCapabilityStill;
 #endif
+#ifdef HAVE_LIBJXL
+  case ImageFormat::Jxl:
+    return IncrementalCapabilityStill | IncrementalCapabilityAnimation;
+#endif
 #ifdef HAVE_LIBPNG
   case ImageFormat::Png:
     return IncrementalCapabilityStill | IncrementalCapabilityAnimation;
@@ -54,6 +61,10 @@ create_decoder(ImageFormat format,
 #ifdef HAVE_LIBJPEG
   case ImageFormat::Jpeg:
     return create_incremental_jpeg_decoder(options);
+#endif
+#ifdef HAVE_LIBJXL
+  case ImageFormat::Jxl:
+    return create_incremental_jxl_decoder(options);
 #endif
 #ifdef HAVE_LIBPNG
   case ImageFormat::Png:

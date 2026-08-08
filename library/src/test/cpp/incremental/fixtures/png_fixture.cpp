@@ -20,6 +20,66 @@ void write_big_endian_u32(std::vector<uint8_t>& output, uint32_t value) {
   output.push_back(static_cast<uint8_t>(value));
 }
 
+void write_big_endian_u16(std::vector<uint8_t>& output, uint16_t value) {
+  output.push_back(static_cast<uint8_t>(value >> 8));
+  output.push_back(static_cast<uint8_t>(value));
+}
+
+uint32_t read_big_endian_u32(const uint8_t* bytes) {
+  return static_cast<uint32_t>(bytes[0]) << 24 |
+         static_cast<uint32_t>(bytes[1]) << 16 |
+         static_cast<uint32_t>(bytes[2]) << 8 | static_cast<uint32_t>(bytes[3]);
+}
+
+void append_chunk(std::vector<uint8_t>& output,
+                  const std::array<uint8_t, 4>& type,
+                  const std::vector<uint8_t>& data) {
+  write_big_endian_u32(output, static_cast<uint32_t>(data.size()));
+  output.insert(output.end(), type.begin(), type.end());
+  output.insert(output.end(), data.begin(), data.end());
+  uLong checksum = crc32(0, Z_NULL, 0);
+  checksum = crc32(checksum, type.data(), type.size());
+  if (!data.empty()) {
+    checksum = crc32(checksum, data.data(), data.size());
+  }
+  write_big_endian_u32(output, static_cast<uint32_t>(checksum));
+}
+
+std::vector<std::vector<uint8_t>>
+chunk_payloads(const std::vector<uint8_t>& png,
+               const std::array<uint8_t, 4>& wantedType) {
+  std::vector<std::vector<uint8_t>> payloads;
+  size_t offset = 8;
+  while (offset + 12 <= png.size()) {
+    const uint32_t size = read_big_endian_u32(png.data() + offset);
+    require_condition(offset + static_cast<size_t>(size) + 12 <= png.size(),
+                      "PNG fixture chunks must be complete");
+    if (std::equal(wantedType.begin(), wantedType.end(),
+                   png.begin() + static_cast<std::ptrdiff_t>(offset + 4))) {
+      payloads.emplace_back(
+          png.begin() + static_cast<std::ptrdiff_t>(offset + 8),
+          png.begin() + static_cast<std::ptrdiff_t>(offset + 8 + size));
+    }
+    offset += static_cast<size_t>(size) + 12;
+  }
+  return payloads;
+}
+
+std::vector<uint8_t> make_frame_control(uint32_t sequence,
+                                        uint16_t durationMillis) {
+  std::vector<uint8_t> control;
+  write_big_endian_u32(control, sequence);
+  write_big_endian_u32(control, kFixtureWidth);
+  write_big_endian_u32(control, kFixtureHeight);
+  write_big_endian_u32(control, 0);
+  write_big_endian_u32(control, 0);
+  write_big_endian_u16(control, durationMillis);
+  write_big_endian_u16(control, 1000);
+  control.push_back(0);
+  control.push_back(0);
+  return control;
+}
+
 std::vector<uint8_t> encode_png(const std::vector<uint8_t>& rgba, bool adam7) {
   std::vector<uint8_t> output;
   png_structp writer =
@@ -67,24 +127,51 @@ EncodedImageFixture make_png_fixture(bool adam7) {
   };
 }
 
-std::vector<uint8_t> make_apng_fallback_fixture() {
-  auto png = make_png_fixture(false).encoded;
-  constexpr size_t kAfterIhdr = 8 + 4 + 4 + 13 + 4;
-  require_condition(png.size() > kAfterIhdr,
-                    "PNG fixture must contain a complete IHDR chunk");
+AnimatedPngFixture make_animated_png_fixture() {
+  constexpr int32_t loopCount = 3;
+  std::vector<std::vector<uint8_t>> frames;
+  frames.push_back(make_fixture_pattern(true));
+  auto secondFrame = frames.front();
+  for (size_t offset = 0; offset < secondFrame.size(); offset += 4) {
+    std::swap(secondFrame[offset], secondFrame[offset + 2]);
+  }
+  frames.push_back(std::move(secondFrame));
+  const auto firstPng = encode_png(frames[0], false);
+  const auto secondPng = encode_png(frames[1], false);
+  const std::array<uint8_t, 4> ihdrType = {'I', 'H', 'D', 'R'};
+  const std::array<uint8_t, 4> idatType = {'I', 'D', 'A', 'T'};
+  const auto ihdr = chunk_payloads(firstPng, ihdrType);
+  const auto firstData = chunk_payloads(firstPng, idatType);
+  const auto secondData = chunk_payloads(secondPng, idatType);
+  require_condition(ihdr.size() == 1 && !firstData.empty() &&
+                        !secondData.empty(),
+                    "APNG fixture source chunks must be available");
 
+  std::vector<uint8_t> encoded(firstPng.begin(), firstPng.begin() + 8);
+  append_chunk(encoded, ihdrType, ihdr.front());
   std::vector<uint8_t> animationControl;
-  write_big_endian_u32(animationControl, 8);
-  const std::array<uint8_t, 4> type = {'a', 'c', 'T', 'L'};
-  animationControl.insert(animationControl.end(), type.begin(), type.end());
-  write_big_endian_u32(animationControl, 1);
-  write_big_endian_u32(animationControl, 0);
-  uLong checksum = crc32(0, Z_NULL, 0);
-  checksum = crc32(checksum, type.data(), type.size());
-  checksum = crc32(checksum, animationControl.data() + 8, 8);
-  write_big_endian_u32(animationControl, static_cast<uint32_t>(checksum));
-
-  png.insert(png.begin() + kAfterIhdr, animationControl.begin(),
-             animationControl.end());
-  return png;
+  write_big_endian_u32(animationControl, 2);
+  write_big_endian_u32(animationControl, loopCount);
+  append_chunk(encoded, {'a', 'c', 'T', 'L'}, animationControl);
+  append_chunk(encoded, {'f', 'c', 'T', 'L'}, make_frame_control(0, 100));
+  for (const auto& data : firstData) {
+    append_chunk(encoded, idatType, data);
+  }
+  append_chunk(encoded, {'f', 'c', 'T', 'L'}, make_frame_control(1, 240));
+  uint32_t sequence = 2;
+  for (const auto& data : secondData) {
+    std::vector<uint8_t> frameData;
+    write_big_endian_u32(frameData, sequence++);
+    frameData.insert(frameData.end(), data.begin(), data.end());
+    append_chunk(encoded, {'f', 'd', 'A', 'T'}, frameData);
+  }
+  append_chunk(encoded, {'I', 'E', 'N', 'D'}, {});
+  return AnimatedPngFixture{
+      .width = kFixtureWidth,
+      .height = kFixtureHeight,
+      .loopCount = loopCount,
+      .durationsMillis = {100, 240},
+      .expectedFrames = std::move(frames),
+      .encoded = std::move(encoded),
+  };
 }

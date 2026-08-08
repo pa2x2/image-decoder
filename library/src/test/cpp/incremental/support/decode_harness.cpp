@@ -48,7 +48,28 @@ decode_in_chunks(const IncrementalDecoderFactory& factory,
           .receivedAtEndOfInput = endOfInput,
           .rgba = *update.snapshot->rgba,
       });
+    } else if (update.type == IncrementalUpdateType::AnimationFrameAvailable) {
+      require_condition(update.snapshot != nullptr,
+                        "animation update must carry a snapshot");
+      require_condition(update.snapshot->rgba != nullptr,
+                        "animation snapshot must carry pixels");
+      require_condition(update.animationFrame != nullptr,
+                        "animation update must carry frame metadata");
+      trace.animationFrames.push_back(CapturedAnimationFrameUpdate{
+          .index = update.animationFrame->index,
+          .durationMillis = update.animationFrame->durationMillis,
+          .blendOperation = update.animationFrame->blendOperation,
+          .disposalOperation = update.animationFrame->disposalOperation,
+          .width = update.snapshot->width,
+          .height = update.snapshot->height,
+          .receivedAfterBytes = bytesAfterAppend,
+          .receivedAtEndOfInput = endOfInput,
+          .rgba = *update.snapshot->rgba,
+      });
     } else if (update.type == IncrementalUpdateType::Complete) {
+      if (update.info != nullptr) {
+        trace.completionInfo = *update.info;
+      }
       ++trace.completeUpdates;
     }
   };

@@ -30,6 +30,7 @@ public:
                    bool overwrite);
   void updateSourceRow(uint32_t sourceY, const uint8_t* rgbaSourceRow);
   std::unique_ptr<IncrementalPixelSnapshot> takeSnapshot();
+  std::unique_ptr<IncrementalPixelSnapshot> takeFullSnapshot();
 
 private:
   void markDirty(uint32_t x, uint32_t y);

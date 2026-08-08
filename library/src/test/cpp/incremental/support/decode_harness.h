@@ -28,9 +28,23 @@ struct CapturedStillUpdate {
   std::vector<uint8_t> rgba;
 };
 
+struct CapturedAnimationFrameUpdate {
+  int32_t index;
+  uint64_t durationMillis;
+  IncrementalBlendOperationNative blendOperation;
+  IncrementalDisposalOperationNative disposalOperation;
+  uint32_t width;
+  uint32_t height;
+  size_t receivedAfterBytes;
+  bool receivedAtEndOfInput;
+  std::vector<uint8_t> rgba;
+};
+
 struct IncrementalDecodeTrace {
   std::optional<IncrementalImageInfoNative> metadata;
+  std::optional<IncrementalImageInfoNative> completionInfo;
   std::vector<CapturedStillUpdate> stillUpdates;
+  std::vector<CapturedAnimationFrameUpdate> animationFrames;
   IncrementalBackendResult result = IncrementalBackendResult::Accepted;
   size_t completeUpdates = 0;
   size_t consumedBytes = 0;

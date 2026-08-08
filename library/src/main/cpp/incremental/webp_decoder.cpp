@@ -226,6 +226,7 @@ private:
         .capabilities = 0,
         .info = nullptr,
         .snapshot = nullptr,
+        .animationFrame = nullptr,
     };
     update.snapshot = std::move(snapshot);
     sink(std::move(update));
@@ -238,6 +239,7 @@ private:
         .capabilities = 0,
         .info = nullptr,
         .snapshot = nullptr,
+        .animationFrame = nullptr,
     };
     update.info =
         std::make_unique<IncrementalImageInfoNative>(IncrementalImageInfoNative{
