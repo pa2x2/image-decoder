@@ -9,8 +9,8 @@
 #include "java_stream.h"
 #include "row_convert.h"
 #include <android/bitmap.h>
-#include <lcms2.h>
 #include <jni.h>
+#include <lcms2.h>
 #include <vector>
 
 jint JNI_OnLoad(JavaVM* vm, void*) {
@@ -187,23 +187,9 @@ Java_tachiyomi_decoder_ImageDecoder_nativeFindType(JNIEnv* env, jclass,
   if (is_jpeg(bytes, size)) {
     return create_image_type(env, 0, false);
   } else if (is_png(bytes, size)) {
-    return create_image_type(env, 1, false);
+    return create_image_type(env, 1, is_animated_png(bytes, size));
   } else if (is_webp(bytes, size)) {
-    try {
-#ifdef HAVE_LIBWEBP
-      if (size >= 32) {
-        auto decoder = std::make_unique<WebpDecoder>(
-            std::make_shared<Stream>(bytes, size), false, nullptr);
-        return create_image_type(env, 2, decoder->info.isAnimated);
-      }
-      return create_image_type(env, 2, false);
-#else
-      throw std::runtime_error("WebP decoder not available");
-#endif
-    } catch (std::exception& ex) {
-      LOGW("Failed to parse WebP header. Falling back to non animated WebP");
-      return create_image_type(env, 2, false);
-    }
+    return create_image_type(env, 2, is_animated_webp(bytes, size));
   } else if (is_gif(bytes, size)) {
     return create_image_type(env, 3, true);
   } else if (is_jxl(bytes, size)) {

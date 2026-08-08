@@ -14,7 +14,7 @@ constexpr jsize kMaximumDisplayProfileBytes = 4 * 1024 * 1024;
 constexpr jint kMaximumOutputDimension = 32768;
 constexpr jlong kMaximumBitmapPixels = 67108864;
 constexpr jint kMaximumAppendBytes = 64 * 1024;
-constexpr jsize kIncrementalUpdateValueCount = 16;
+constexpr jsize kIncrementalUpdateValueCount = 20;
 
 void throw_exception(JNIEnv* env, const char* className, const char* message) {
   const jclass exceptionClass = env->FindClass(className);
@@ -184,6 +184,10 @@ Java_tachiyomi_decoder_incremental_IncrementalImageDecoder_nativePollUpdate(
       0,
       0,
       0,
+      -1,
+      0,
+      0,
+      0,
   };
   if (update.info != nullptr) {
     values[3] = update.info->width;
@@ -194,6 +198,12 @@ Java_tachiyomi_decoder_incremental_IncrementalImageDecoder_nativePollUpdate(
     values[8] = update.info->hasAlpha;
     values[9] = update.info->frameCount;
     values[10] = update.info->loopCount;
+  }
+  if (update.animationFrame != nullptr) {
+    values[16] = update.animationFrame->index;
+    values[17] = static_cast<jlong>(update.animationFrame->durationMillis);
+    values[18] = static_cast<jlong>(update.animationFrame->blendOperation);
+    values[19] = static_cast<jlong>(update.animationFrame->disposalOperation);
   }
   jobject bitmap = nullptr;
   if (update.snapshot != nullptr) {

@@ -11,6 +11,7 @@
 #ifdef HAVE_LIBWEBP
 #include "incremental/webp_decoder.h"
 #endif
+#include "incremental/gif_decoder.h"
 
 #include <algorithm>
 #include <limits>
@@ -22,6 +23,8 @@ namespace {
 constexpr size_t kMaximumSniffBytes = 4096;
 constexpr uint64_t kMaximumInputBytes =
     static_cast<uint64_t>(std::numeric_limits<uint32_t>::max());
+constexpr size_t kMaximumPendingAnimationFrames = 16;
+constexpr size_t kMaximumPendingAnimationBytes = 64 * 1024 * 1024;
 
 int32_t capabilities_for(ImageFormat format) {
   switch (format) {
@@ -31,12 +34,14 @@ int32_t capabilities_for(ImageFormat format) {
 #endif
 #ifdef HAVE_LIBPNG
   case ImageFormat::Png:
-    return IncrementalCapabilityStill;
+    return IncrementalCapabilityStill | IncrementalCapabilityAnimation;
 #endif
 #ifdef HAVE_LIBWEBP
   case ImageFormat::Webp:
-    return IncrementalCapabilityStill;
+    return IncrementalCapabilityStill | IncrementalCapabilityAnimation;
 #endif
+  case ImageFormat::Gif:
+    return IncrementalCapabilityAnimation;
   default:
     return 0;
   }
@@ -58,6 +63,8 @@ create_decoder(ImageFormat format,
   case ImageFormat::Webp:
     return create_incremental_webp_decoder(options);
 #endif
+  case ImageFormat::Gif:
+    return create_incremental_gif_decoder(options);
   default:
     return nullptr;
   }
@@ -131,6 +138,7 @@ void IncrementalDecoderSession::detectFormat(bool endOfInput) {
       .capabilities = capabilities,
       .info = nullptr,
       .snapshot = nullptr,
+      .animationFrame = nullptr,
   });
   if (capabilities == 0) {
     pendingInput.clear();
@@ -167,6 +175,10 @@ void IncrementalDecoderSession::appendToDecoder(const uint8_t* bytes,
                                         [this](IncrementalUpdate&& update) {
                                           publishUpdate(std::move(update));
                                         });
+    if (terminal) {
+      decoder.reset();
+      return;
+    }
     if (result == IncrementalBackendResult::Unsupported) {
       decoder.reset();
       publishUnsupported(detectedFormat);
@@ -182,6 +194,9 @@ void IncrementalDecoderSession::appendToDecoder(const uint8_t* bytes,
 }
 
 void IncrementalDecoderSession::publishUpdate(IncrementalUpdate&& update) {
+  if (terminal) {
+    return;
+  }
   if (update.type == IncrementalUpdateType::StillImageAvailable) {
     const auto existing =
         std::find_if(updates.begin(), updates.end(), [](const auto& pending) {
@@ -201,6 +216,44 @@ void IncrementalDecoderSession::publishUpdate(IncrementalUpdate&& update) {
       return;
     }
   }
+  if (update.type == IncrementalUpdateType::AnimationFrameAvailable) {
+    size_t pendingFrames = 0;
+    size_t pendingBytes = 0;
+    for (const auto& pending : updates) {
+      if (pending.type == IncrementalUpdateType::AnimationFrameAvailable) {
+        ++pendingFrames;
+        if (pending.snapshot != nullptr && pending.snapshot->rgba != nullptr) {
+          pendingBytes += pending.snapshot->rgba->size();
+        }
+      }
+    }
+    const size_t incomingBytes =
+        update.snapshot != nullptr && update.snapshot->rgba != nullptr
+            ? update.snapshot->rgba->size()
+            : 0;
+    const bool exceedsByteLimit =
+        incomingBytes > kMaximumPendingAnimationBytes ||
+        pendingBytes > kMaximumPendingAnimationBytes - incomingBytes;
+    if (pendingFrames >= kMaximumPendingAnimationFrames || exceedsByteLimit) {
+      updates.erase(std::remove_if(
+                        updates.begin(), updates.end(),
+                        [](const auto& pending) {
+                          return pending.type ==
+                                 IncrementalUpdateType::AnimationFrameAvailable;
+                        }),
+                    updates.end());
+      updates.push_back(IncrementalUpdate{
+          .type = IncrementalUpdateType::Unsupported,
+          .format = detectedFormat,
+          .capabilities = 0,
+          .info = nullptr,
+          .snapshot = nullptr,
+          .animationFrame = nullptr,
+      });
+      terminal = true;
+      return;
+    }
+  }
   updates.push_back(std::move(update));
 }
 
@@ -211,6 +264,7 @@ void IncrementalDecoderSession::publishUnsupported(int32_t format) {
       .capabilities = 0,
       .info = nullptr,
       .snapshot = nullptr,
+      .animationFrame = nullptr,
   });
   terminal = true;
 }
@@ -222,6 +276,7 @@ void IncrementalDecoderSession::publishError(int32_t format) {
       .capabilities = 0,
       .info = nullptr,
       .snapshot = nullptr,
+      .animationFrame = nullptr,
   });
   terminal = true;
 }

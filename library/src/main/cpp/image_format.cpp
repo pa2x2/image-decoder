@@ -1,6 +1,7 @@
 #include "image_format.h"
 
 #include <algorithm>
+#include <cstring>
 #include <iterator>
 
 namespace {
@@ -82,10 +83,40 @@ bool is_png(const uint8_t* data, size_t size) {
          std::equal(std::begin(signature), std::end(signature), data);
 }
 
+bool is_animated_png(const uint8_t* data, size_t size) {
+  if (!is_png(data, size)) {
+    return false;
+  }
+  size_t offset = 8;
+  while (offset + 8 <= size) {
+    const uint32_t chunkSize = read_big_endian_u32(data + offset);
+    const uint8_t* type = data + offset + 4;
+    if (std::memcmp(type, "acTL", 4) == 0) {
+      return true;
+    }
+    if (std::memcmp(type, "IDAT", 4) == 0) {
+      return false;
+    }
+    const uint64_t end = static_cast<uint64_t>(offset) + chunkSize + 12;
+    if (end > size) {
+      return false;
+    }
+    offset = static_cast<size_t>(end);
+  }
+  return false;
+}
+
 bool is_webp(const uint8_t* data, size_t size) {
   return has_bytes(data, size, 12) && data[0] == 'R' && data[1] == 'I' &&
          data[2] == 'F' && data[3] == 'F' && data[8] == 'W' && data[9] == 'E' &&
          data[10] == 'B' && data[11] == 'P';
+}
+
+bool is_animated_webp(const uint8_t* data, size_t size) {
+  if (!is_webp(data, size) || size < 21) {
+    return false;
+  }
+  return std::memcmp(data + 12, "VP8X", 4) == 0 && (data[20] & 0x02) != 0;
 }
 
 bool is_gif(const uint8_t* data, size_t size) {

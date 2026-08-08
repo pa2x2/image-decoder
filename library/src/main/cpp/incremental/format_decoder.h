@@ -19,6 +19,7 @@ enum class IncrementalUpdateType : int32_t {
   MetadataAvailable = 4,
   StillImageAvailable = 5,
   Complete = 6,
+  AnimationFrameAvailable = 7,
 };
 
 enum IncrementalCapability : int32_t {
@@ -49,12 +50,31 @@ struct IncrementalPixelSnapshot {
   std::shared_ptr<std::vector<uint8_t>> rgba;
 };
 
+enum class IncrementalBlendOperationNative : int32_t {
+  Source = 0,
+  Over = 1,
+};
+
+enum class IncrementalDisposalOperationNative : int32_t {
+  None = 0,
+  Background = 1,
+  Previous = 2,
+};
+
+struct IncrementalAnimationFrameNative {
+  int32_t index;
+  uint64_t durationMillis;
+  IncrementalBlendOperationNative blendOperation;
+  IncrementalDisposalOperationNative disposalOperation;
+};
+
 struct IncrementalUpdate {
   IncrementalUpdateType type;
   int32_t format = -1;
   int32_t capabilities = 0;
   std::unique_ptr<IncrementalImageInfoNative> info;
   std::unique_ptr<IncrementalPixelSnapshot> snapshot;
+  std::unique_ptr<IncrementalAnimationFrameNative> animationFrame;
 };
 
 struct IncrementalDecodeOptionsNative {

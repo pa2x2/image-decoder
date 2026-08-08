@@ -1,5 +1,6 @@
 #include "incremental/png_decoder.h"
 
+#include "incremental/apng_decoder.h"
 #include "incremental/color_transform.h"
 #include "incremental/image_canvas.h"
 #include "log.h"
@@ -9,6 +10,7 @@
 #include <array>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -73,9 +75,10 @@ private:
   bool animated = false;
 };
 
-class IncrementalPngDecoder final : public IncrementalFormatDecoder {
+class IncrementalStaticPngDecoder final : public IncrementalFormatDecoder {
 public:
-  explicit IncrementalPngDecoder(const IncrementalDecodeOptionsNative& options)
+  explicit IncrementalStaticPngDecoder(
+      const IncrementalDecodeOptionsNative& options)
       : options(options), colorTransform(options) {
     png = png_create_read_struct(
         PNG_LIBPNG_VER_STRING, nullptr,
@@ -94,23 +97,23 @@ public:
     png_set_progressive_read_fn(
         png, this,
         [](png_struct* png, png_info* info) {
-          auto* decoder =
-              static_cast<IncrementalPngDecoder*>(png_get_progressive_ptr(png));
+          auto* decoder = static_cast<IncrementalStaticPngDecoder*>(
+              png_get_progressive_ptr(png));
           decoder->onInfo(info);
         },
         [](png_struct* png, png_byte* row, png_uint_32 rowNumber, int pass) {
-          auto* decoder =
-              static_cast<IncrementalPngDecoder*>(png_get_progressive_ptr(png));
+          auto* decoder = static_cast<IncrementalStaticPngDecoder*>(
+              png_get_progressive_ptr(png));
           decoder->onRow(row, rowNumber, pass);
         },
         [](png_struct* png, png_info*) {
-          auto* decoder =
-              static_cast<IncrementalPngDecoder*>(png_get_progressive_ptr(png));
+          auto* decoder = static_cast<IncrementalStaticPngDecoder*>(
+              png_get_progressive_ptr(png));
           decoder->complete = true;
         });
   }
 
-  ~IncrementalPngDecoder() override {
+  ~IncrementalStaticPngDecoder() override {
     png_destroy_read_struct(&png, &info, nullptr);
   }
 
@@ -295,6 +298,70 @@ private:
   bool interlaced = false;
   bool hasAlpha = false;
   bool complete = false;
+};
+
+class IncrementalPngDecoder final : public IncrementalFormatDecoder {
+public:
+  explicit IncrementalPngDecoder(const IncrementalDecodeOptionsNative& options)
+      : options(options) {}
+
+  IncrementalBackendResult append(const uint8_t* bytes, size_t size,
+                                  bool endOfInput,
+                                  const IncrementalUpdateSink& sink) override {
+    if (delegate != nullptr) {
+      return delegate->append(bytes, size, endOfInput, sink);
+    }
+    if (size > kMaximumPngHeaderBytes - pendingInput.size()) {
+      return IncrementalBackendResult::Unsupported;
+    }
+    if (size > 0) {
+      pendingInput.insert(pendingInput.end(), bytes, bytes + size);
+    }
+    const auto animation = detectAnimation();
+    if (!animation.has_value()) {
+      if (endOfInput) {
+        throw std::runtime_error("Truncated PNG header");
+      }
+      return IncrementalBackendResult::Accepted;
+    }
+    delegate = *animation
+                   ? create_incremental_apng_decoder(options)
+                   : std::make_unique<IncrementalStaticPngDecoder>(options);
+    const auto result =
+        delegate->append(pendingInput.empty() ? nullptr : pendingInput.data(),
+                         pendingInput.size(), endOfInput, sink);
+    pendingInput.clear();
+    return result;
+  }
+
+private:
+  std::optional<bool> detectAnimation() const {
+    if (pendingInput.size() < 8) {
+      return std::nullopt;
+    }
+    size_t offset = 8;
+    while (offset + 8 <= pendingInput.size()) {
+      const uint32_t size = read_big_endian_u32(pendingInput.data() + offset);
+      const uint8_t* type = pendingInput.data() + offset + 4;
+      if (std::memcmp(type, "acTL", 4) == 0) {
+        return true;
+      }
+      if (std::memcmp(type, "IDAT", 4) == 0) {
+        return false;
+      }
+      const uint64_t end = static_cast<uint64_t>(offset) + size + 12;
+      if (end > pendingInput.size()) {
+        return std::nullopt;
+      }
+      offset = static_cast<size_t>(end);
+    }
+    return std::nullopt;
+  }
+
+  static constexpr size_t kMaximumPngHeaderBytes = 4 * 1024 * 1024;
+  IncrementalDecodeOptionsNative options;
+  std::vector<uint8_t> pendingInput;
+  std::unique_ptr<IncrementalFormatDecoder> delegate;
 };
 
 } // namespace

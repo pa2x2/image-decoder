@@ -144,6 +144,26 @@ class IncrementalImageDecoder private constructor(
         ),
         generation = updateValues[UPDATE_GENERATION_INDEX],
       )
+      UPDATE_ANIMATION_FRAME_AVAILABLE -> IncrementalDecodeUpdate.AnimationFrameAvailable(
+        bitmap = checkNotNull(bitmap),
+        frame = IncrementalAnimationFrame(
+          index = updateValues[UPDATE_FRAME_INDEX].toInt(),
+          durationMillis = updateValues[UPDATE_FRAME_DURATION_INDEX],
+          updatedRegion = IncrementalImageRegion(
+            left = updateValues[UPDATE_REGION_LEFT_INDEX].toInt(),
+            top = updateValues[UPDATE_REGION_TOP_INDEX].toInt(),
+            right = updateValues[UPDATE_REGION_RIGHT_INDEX].toInt(),
+            bottom = updateValues[UPDATE_REGION_BOTTOM_INDEX].toInt(),
+          ),
+          blendOperation = IncrementalBlendOperation.entries[
+            updateValues[UPDATE_FRAME_BLEND_INDEX].toInt()
+          ],
+          disposalOperation = IncrementalDisposalOperation.entries[
+            updateValues[UPDATE_FRAME_DISPOSAL_INDEX].toInt()
+          ],
+        ),
+        generation = updateValues[UPDATE_GENERATION_INDEX],
+      )
       UPDATE_COMPLETE -> IncrementalDecodeUpdate.Complete(
         info = readImageInfo(checkNotNull(format)),
       )
@@ -246,7 +266,11 @@ private const val UPDATE_REGION_LEFT_INDEX = 12
 private const val UPDATE_REGION_TOP_INDEX = 13
 private const val UPDATE_REGION_RIGHT_INDEX = 14
 private const val UPDATE_REGION_BOTTOM_INDEX = 15
-private const val UPDATE_VALUE_COUNT = 16
+private const val UPDATE_FRAME_INDEX = 16
+private const val UPDATE_FRAME_DURATION_INDEX = 17
+private const val UPDATE_FRAME_BLEND_INDEX = 18
+private const val UPDATE_FRAME_DISPOSAL_INDEX = 19
+private const val UPDATE_VALUE_COUNT = 20
 
 private const val UPDATE_NONE = 0
 private const val UPDATE_FORMAT_DETECTED = 1
@@ -255,6 +279,7 @@ private const val UPDATE_ERROR = 3
 private const val UPDATE_METADATA_AVAILABLE = 4
 private const val UPDATE_STILL_IMAGE_AVAILABLE = 5
 private const val UPDATE_COMPLETE = 6
+private const val UPDATE_ANIMATION_FRAME_AVAILABLE = 7
 
 private const val CAPABILITY_STILL = 1
 private const val CAPABILITY_ANIMATION = 1 shl 1

@@ -17,6 +17,9 @@ add_library(imagedecoder SHARED
   java_objects.cpp
   image_format.cpp
   incremental/color_transform.cpp
+  incremental/animation_canvas.cpp
+  incremental/apng_decoder.cpp
+  incremental/gif_decoder.cpp
   incremental/image_canvas.cpp
   incremental/session.cpp
   incremental_java_wrapper.cpp
@@ -53,6 +56,7 @@ if(WITH_WEBP)
   add_definitions(-DHAVE_LIBWEBP)
   target_sources(imagedecoder PRIVATE
     decoder_webp.cpp
+    incremental/animated_webp_decoder.cpp
     incremental/webp_decoder.cpp
   )
 endif()

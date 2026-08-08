@@ -30,7 +30,9 @@ ImageFormatDetectionResult detect_image_format(const uint8_t* data, size_t size,
 
 bool is_jpeg(const uint8_t* data, size_t size);
 bool is_png(const uint8_t* data, size_t size);
+bool is_animated_png(const uint8_t* data, size_t size);
 bool is_webp(const uint8_t* data, size_t size);
+bool is_animated_webp(const uint8_t* data, size_t size);
 bool is_gif(const uint8_t* data, size_t size);
 bool is_heif(const uint8_t* data, size_t size);
 bool is_avif(const uint8_t* data, size_t size);

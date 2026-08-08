@@ -1,5 +1,6 @@
 #include "incremental/webp_decoder.h"
 
+#include "incremental/animated_webp_decoder.h"
 #include "incremental/color_transform.h"
 #include "incremental/image_canvas.h"
 
@@ -8,6 +9,7 @@
 #include <algorithm>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -24,16 +26,17 @@ uint32_t read_little_endian_u32(const uint8_t* bytes) {
          static_cast<uint32_t>(bytes[3]) << 24;
 }
 
-class IncrementalWebpDecoder final : public IncrementalFormatDecoder {
+class IncrementalStaticWebpDecoder final : public IncrementalFormatDecoder {
 public:
-  explicit IncrementalWebpDecoder(const IncrementalDecodeOptionsNative& options)
+  explicit IncrementalStaticWebpDecoder(
+      const IncrementalDecodeOptionsNative& options)
       : options(options), colorTransform(options) {
     if (!WebPInitDecoderConfig(&config)) {
       throw std::runtime_error("Failed to initialize incremental WebP config");
     }
   }
 
-  ~IncrementalWebpDecoder() override {
+  ~IncrementalStaticWebpDecoder() override {
     if (decoder != nullptr) {
       WebPIDelete(decoder);
     }
@@ -261,6 +264,82 @@ private:
   int publishedRows = 0;
   VP8StatusCode lastStatus = VP8_STATUS_SUSPENDED;
   bool complete = false;
+};
+
+class IncrementalWebpDecoder final : public IncrementalFormatDecoder {
+public:
+  explicit IncrementalWebpDecoder(const IncrementalDecodeOptionsNative& options)
+      : options(options) {}
+
+  IncrementalBackendResult append(const uint8_t* bytes, size_t size,
+                                  bool endOfInput,
+                                  const IncrementalUpdateSink& sink) override {
+    if (delegate != nullptr) {
+      return delegate->append(bytes, size, endOfInput, sink);
+    }
+    if (size > kMaximumWebpHeaderBytes - pendingInput.size()) {
+      return IncrementalBackendResult::Unsupported;
+    }
+    if (size > 0) {
+      pendingInput.insert(pendingInput.end(), bytes, bytes + size);
+    }
+
+    const auto animation = detectAnimation();
+    if (!animation.has_value()) {
+      if (endOfInput) {
+        throw std::runtime_error("Truncated WebP header");
+      }
+      return IncrementalBackendResult::Accepted;
+    }
+    delegate = *animation
+                   ? create_incremental_animated_webp_decoder(options)
+                   : std::make_unique<IncrementalStaticWebpDecoder>(options);
+    const auto result =
+        delegate->append(pendingInput.empty() ? nullptr : pendingInput.data(),
+                         pendingInput.size(), endOfInput, sink);
+    pendingInput.clear();
+    return result;
+  }
+
+private:
+  std::optional<bool> detectAnimation() const {
+    if (pendingInput.size() < 16) {
+      return std::nullopt;
+    }
+    size_t offset = 12;
+    while (offset + 8 <= pendingInput.size()) {
+      const uint8_t* chunk = pendingInput.data() + offset;
+      const uint32_t chunkSize = read_little_endian_u32(chunk + 4);
+      if (std::memcmp(chunk, "VP8X", 4) == 0) {
+        if (chunkSize < 10) {
+          throw std::runtime_error("Invalid WebP extended header");
+        }
+        if (offset + 9 > pendingInput.size()) {
+          return std::nullopt;
+        }
+        return (chunk[8] & 0x02) != 0;
+      }
+      if (std::memcmp(chunk, "ANIM", 4) == 0 ||
+          std::memcmp(chunk, "ANMF", 4) == 0) {
+        return true;
+      }
+      if (std::memcmp(chunk, "VP8 ", 4) == 0 ||
+          std::memcmp(chunk, "VP8L", 4) == 0) {
+        return false;
+      }
+      const uint64_t chunkEnd =
+          static_cast<uint64_t>(offset) + 8 + chunkSize + (chunkSize & 1U);
+      if (chunkEnd > pendingInput.size()) {
+        return std::nullopt;
+      }
+      offset = static_cast<size_t>(chunkEnd);
+    }
+    return std::nullopt;
+  }
+
+  IncrementalDecodeOptionsNative options;
+  std::vector<uint8_t> pendingInput;
+  std::unique_ptr<IncrementalFormatDecoder> delegate;
 };
 
 } // namespace
