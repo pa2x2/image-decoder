@@ -28,7 +28,7 @@ void append_lzw_indices(std::vector<uint8_t>& output,
   std::vector<uint8_t> encoded;
   uint32_t bits = 0;
   uint8_t bitCount = 0;
-  const auto appendCode = [&](uint8_t code) mutable {
+  const auto appendCode = [&](uint8_t code) {
     bits |= static_cast<uint32_t>(code) << bitCount;
     bitCount += kCodeSize;
     while (bitCount >= 8) {
