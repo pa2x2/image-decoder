@@ -76,3 +76,65 @@ target_link_libraries(incremental_decoder_host_tests PRIVATE
 )
 
 add_test(NAME incremental_decoder_host_tests COMMAND incremental_decoder_host_tests)
+
+find_package(JNI REQUIRED)
+pkg_check_modules(JXL_THREADS REQUIRED IMPORTED_TARGET libjxl_threads)
+
+add_executable(decoder_host_tests
+  box_downsampler_test.cpp
+  sampled_decode_test.cpp
+  test_main.cpp
+  incremental/fixtures/image_pattern.cpp
+  incremental/fixtures/jpeg_fixture.cpp
+  incremental/fixtures/jxl_fixture.cpp
+  incremental/fixtures/png_fixture.cpp
+  incremental/support/decode_harness.cpp
+  ${PRODUCTION_ROOT}/box_downsampler.cpp
+)
+
+# The regular decoders predate the host tests and are held to the Android
+# build's warning settings, not this suite's stricter ones.
+add_library(regular_decoders OBJECT
+  ${PRODUCTION_ROOT}/borders.cpp
+  ${PRODUCTION_ROOT}/decoder_jpeg.cpp
+  ${PRODUCTION_ROOT}/decoder_jxl.cpp
+  ${PRODUCTION_ROOT}/decoder_png.cpp
+)
+target_compile_features(regular_decoders PRIVATE cxx_std_20)
+target_include_directories(regular_decoders PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/platform"
+  "${PRODUCTION_ROOT}"
+  ${JNI_INCLUDE_DIRS}
+)
+target_link_libraries(regular_decoders PRIVATE
+  JPEG::JPEG
+  PNG::PNG
+  PkgConfig::JXL
+  PkgConfig::JXL_THREADS
+  PkgConfig::LCMS2
+)
+
+target_compile_features(decoder_host_tests PRIVATE cxx_std_20)
+target_compile_options(decoder_host_tests PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Werror
+)
+target_include_directories(decoder_host_tests PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/incremental"
+  "${CMAKE_CURRENT_SOURCE_DIR}/platform"
+  "${PRODUCTION_ROOT}"
+  ${JNI_INCLUDE_DIRS}
+)
+target_link_libraries(decoder_host_tests PRIVATE
+  regular_decoders
+  JPEG::JPEG
+  PNG::PNG
+  PkgConfig::JXL
+  PkgConfig::JXL_THREADS
+  PkgConfig::LCMS2
+)
+
+add_test(NAME decoder_host_tests COMMAND decoder_host_tests)

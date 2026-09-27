@@ -5,8 +5,9 @@
 #include "decoder_jpeg.h"
 #include "cmyk.h"
 #include "log.h"
-#include "row_convert.h"
+#include "box_downsampler.h"
 #include <algorithm>
+#include <cstring>
 
 JpegDecoder::JpegDecoder(std::shared_ptr<Stream>&& stream, bool cropBorders,
                          cmsHPROFILE targetProfile)
@@ -185,32 +186,16 @@ void JpegDecoder::decode(uint8_t* outPixels, Rect outRect, Rect inRect,
       outPixelsPos += outStride;
     }
   } else {
-    // Custom sampler needed, we need to decode two rows and downsample them.
-    // Allocate second row and get pointers to the row and the row aligned for
-    // output image.
-    auto inRow2 = std::vector<uint8_t>(inStride);
-    uint8_t* inRow2Ptr = inRow2.data();
-    uint8_t* inRow2PtrAligned = inRow2Ptr + inStrideOffset;
-
-    // We'll only decode the middle rows, so skip the other ones
-    uint32_t skipStart = (customSample - 2) / 2;
-    uint32_t skipEnd = customSample - 2 - skipStart;
-
-    auto rowFn = jinfo->out_color_space == JCS_GRAYSCALE
-                     ? &GRAY8_to_GRAY8_row
-                     : &RGBA8888_to_RGBA8888_row;
-
+    // Only RGBA output carries alpha; the fourth CMYK component is black.
+    BoxDownsampler downsampler(outRect.width, customSample, inComponents,
+                               jinfo->out_color_space == JCS_EXT_RGBA);
     for (uint32_t i = 0; i < outRect.height; i++) {
-      jpeg_skip_scanlines(jinfo, skipStart);
-
-      jpeg_read_scanlines(jinfo, &inRowPtr, 1);
-      jpeg_read_scanlines(jinfo, &inRow2Ptr, 1);
-
-      rowFn(outPixelsPos, inRowPtrAligned, inRow2PtrAligned, outRect.width,
-            customSample);
+      for (uint32_t row = 0; row < customSample; ++row) {
+        jpeg_read_scanlines(jinfo, &inRowPtr, 1);
+        downsampler.addRow(inRowPtrAligned);
+      }
+      downsampler.writeRow(outPixelsPos);
       outPixelsPos += outStride;
-
-      jpeg_skip_scanlines(jinfo, skipEnd);
     }
   }
 

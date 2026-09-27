@@ -3,8 +3,9 @@
 //
 
 #include "decoder_png.h"
-#include "row_convert.h"
+#include "box_downsampler.h"
 #include <algorithm>
+#include <cstring>
 
 static void png_skip_rows(png_structrp png_ptr, png_uint_32 num_rows) {
   for (png_uint_32 i = 0; i < num_rows; ++i) {
@@ -198,10 +199,6 @@ void PngDecoder::decode(uint8_t* outPixels, Rect outRect, Rect inRect,
   uint8_t* outPixelsPos = outPixels;
   uint32_t outStride = outRect.width * inComponents;
 
-  auto rowFn = inComponents == 1   ? &GRAY8_to_GRAY8_row
-               : inComponents == 2 ? &GRAYA88_to_GRAYA88_row
-                                   : &RGBA8888_to_RGBA8888_row;
-
   if (sampleSize == 1) {
     uint32_t inRemainY = info.imageHeight - inRect.height - inRect.y;
 
@@ -239,62 +236,47 @@ void PngDecoder::decode(uint8_t* outPixels, Rect outRect, Rect inRect,
       }
     }
   } else {
-    uint32_t skipStart = (sampleSize - 2) / 2;
-    uint32_t skipEnd = sampleSize - 2 - skipStart;
+    // Alpha is always present: missing alpha is filled in above.
+    BoxDownsampler downsampler(outRect.width, sampleSize, inComponents, true);
+    uint32_t inHeightRounded = outRect.height * sampleSize;
 
     if (passes == 1) {
-      auto inRow1 = std::vector<uint8_t>(inStride);
-      auto inRow2 = std::vector<uint8_t>(inStride);
-
-      auto* inRow1Ptr = inRow1.data();
-      auto* inRow2Ptr = inRow2.data();
-      uint8_t* row1ToWrite = inRow1Ptr + inStrideOffset;
-      uint8_t* row2ToWrite = inRow2Ptr + inStrideOffset;
+      auto inRow = std::vector<uint8_t>(inStride);
+      uint8_t* inRowPtr = inRow.data();
 
       png_skip_rows(png, inRect.y);
-
       for (uint32_t i = 0; i < outRect.height; ++i) {
-        png_skip_rows(png, skipStart);
-        png_read_row(png, inRow1Ptr, nullptr);
-        png_read_row(png, inRow2Ptr, nullptr);
-
-        rowFn(outPixelsPos, row1ToWrite, row2ToWrite, outRect.width,
-              sampleSize);
-        png_skip_rows(png, skipEnd);
+        for (uint32_t row = 0; row < sampleSize; ++row) {
+          png_read_row(png, inRowPtr, nullptr);
+          downsampler.addRow(inRowPtr + inStrideOffset);
+        }
+        downsampler.writeRow(outPixelsPos);
         outPixelsPos += outStride;
       }
     } else {
-      auto tmpPixels = std::vector<uint8_t>(inStride * outRect.height * 2);
-
-      if (!useTransform) {
-        tmpPixels.resize(outRect.width * outRect.height * 8);
-      }
-
-      auto* tmpPixelsPos = tmpPixels.data();
-
-      uint32_t inHeightRounded = outRect.height * sampleSize;
+      // Every pass contributes to every row, so the rows of the region have to
+      // be kept until the last pass has been combined into them.
+      auto inPixels = std::vector<uint8_t>(inStride * inHeightRounded);
       uint32_t inRemainY = info.imageHeight - inHeightRounded - inRect.y;
 
       while (--passes >= 0) {
         png_skip_rows(png, inRect.y);
-        for (uint32_t i = 0; i < outRect.height; ++i) {
-          png_skip_rows(png, skipStart);
-          png_read_row(png, tmpPixelsPos, nullptr);
-          tmpPixelsPos += inStride;
-          png_read_row(png, tmpPixelsPos, nullptr);
-          tmpPixelsPos += inStride;
-          png_skip_rows(png, skipEnd);
+        uint8_t* inPixelsPos = inPixels.data();
+        for (uint32_t i = 0; i < inHeightRounded; ++i) {
+          png_read_row(png, inPixelsPos, nullptr);
+          inPixelsPos += inStride;
         }
         png_skip_rows(png, inRemainY);
-        tmpPixelsPos = tmpPixels.data();
       }
 
+      const uint8_t* inPixelsPos = inPixels.data() + inStrideOffset;
       for (uint32_t i = 0; i < outRect.height; ++i) {
-        rowFn(outPixelsPos, tmpPixelsPos + inStrideOffset,
-              tmpPixelsPos + inStride + inStrideOffset, outRect.width,
-              sampleSize);
+        for (uint32_t row = 0; row < sampleSize; ++row) {
+          downsampler.addRow(inPixelsPos);
+          inPixelsPos += inStride;
+        }
+        downsampler.writeRow(outPixelsPos);
         outPixelsPos += outStride;
-        tmpPixelsPos += inStride * 2;
       }
     }
   }

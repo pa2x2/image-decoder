@@ -26,7 +26,7 @@ add_library(imagedecoder SHARED
   incremental/session.cpp
   incremental_java_wrapper.cpp
   borders.cpp
-  row_convert.cpp
+  box_downsampler.cpp
 )
 
 target_include_directories(imagedecoder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

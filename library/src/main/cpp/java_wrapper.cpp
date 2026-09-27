@@ -7,8 +7,8 @@
 #include "decoders.h"
 #include "java_objects.h"
 #include "java_stream.h"
-#include "row_convert.h"
 #include <android/bitmap.h>
+#include <cstring>
 #include <jni.h>
 #include <lcms2.h>
 #include <vector>

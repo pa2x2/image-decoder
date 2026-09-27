@@ -3,7 +3,8 @@
 //
 
 #include "decoder_heif.h"
-#include "row_convert.h"
+#include "box_downsampler.h"
+#include <cstring>
 
 bool is_libheif_compatible(const uint8_t* bytes, uint32_t size) {
   //reject small invalid files that cause heif_check_filetype to return heif_filetype_maybe
@@ -141,24 +142,13 @@ void HeifDecoder::decode(uint8_t* outPixels, Rect outRect, Rect inRect,
       outPixelsPos += outStride;
     }
   } else {
-    // Calculate the number of rows to discard
-    uint32_t skipStart = (sampleSize - 2) / 2;
-    uint32_t skipEnd = sampleSize - 2 - skipStart;
-
+    BoxDownsampler downsampler(outRect.width, sampleSize, 4, true);
     for (uint32_t i = 0; i < outRect.height; ++i) {
-      // Skip starting rows
-      inPixelsPos += inStride * skipStart;
-
-      // Apply row conversion function to the following two rows
-      RGBA8888_to_RGBA8888_row(outPixelsPos, inPixelsPos + inStrideOffset,
-                               inPixelsPos + inStrideOffset + inStride,
-                               outRect.width, sampleSize);
-
-      // Shift row to read to the next 2 rows (the ones we've just read) + the
-      // skipped end rows
-      inPixelsPos += inStride * (2 + skipEnd);
-
-      // Shift row to write
+      for (uint32_t row = 0; row < sampleSize; ++row) {
+        downsampler.addRow(inPixelsPos + inStrideOffset);
+        inPixelsPos += inStride;
+      }
+      downsampler.writeRow(outPixelsPos);
       outPixelsPos += outStride;
     }
   }
