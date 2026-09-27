@@ -1,6 +1,7 @@
 #include "fixtures/gif_fixture.h"
 #include "incremental/gif_decoder.h"
 #include "support/decode_harness.h"
+#include "support/scaled_decode_expectations.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -62,9 +63,21 @@ void require_truncated_gif_fails() {
   require_condition(threw, "truncated GIF must fail at end of input");
 }
 
+void require_scaled_gif_decode() {
+  // The fixture's frames update sub-rectangles at odd offsets and use both
+  // background and previous disposal, so scaled frames must follow the
+  // composed canvas rather than the rectangles an encoder chose.
+  const auto fixture = make_animated_gif_fixture();
+  require_scaled_frames_are_area_averages(kGifFactory, fixture.encoded,
+                                          fixture.width, fixture.height,
+                                          fixture.width * 3 / 4, 7,
+                                          "scaled GIF");
+}
+
 } // namespace
 
 void run_gif_decoder_tests() {
   require_animated_gif_decode();
+  require_scaled_gif_decode();
   require_truncated_gif_fails();
 }

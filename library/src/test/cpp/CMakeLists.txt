@@ -22,6 +22,8 @@ add_executable(incremental_decoder_host_tests
   incremental/fixtures/png_fixture.cpp
   incremental/fixtures/webp_fixture.cpp
   incremental/support/decode_harness.cpp
+  incremental/support/scaled_decode_expectations.cpp
+  incremental/area_resampling_test.cpp
   incremental/jpeg_decoder_test.cpp
   incremental/gif_decoder_test.cpp
   incremental/jxl_decoder_test.cpp
@@ -33,6 +35,8 @@ add_executable(incremental_decoder_host_tests
   ${PRODUCTION_ROOT}/incremental/color_transform.cpp
   ${PRODUCTION_ROOT}/incremental/animated_webp_decoder.cpp
   ${PRODUCTION_ROOT}/incremental/animation_canvas.cpp
+  ${PRODUCTION_ROOT}/incremental/area_resampling.cpp
+  ${PRODUCTION_ROOT}/incremental/area_row_resampler.cpp
   ${PRODUCTION_ROOT}/incremental/apng_decoder.cpp
   ${PRODUCTION_ROOT}/incremental/gif_decoder.cpp
   ${PRODUCTION_ROOT}/incremental/image_canvas.cpp

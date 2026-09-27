@@ -1,11 +1,12 @@
 #include "incremental/animation_canvas.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 #include <stdexcept>
 
 namespace {
+
+constexpr uint64_t kMaximumAnimationSourcePixels = 32 * 1024 * 1024;
 
 uint8_t blend_channel(uint8_t source, uint8_t destination, uint32_t sourceAlpha,
                       uint32_t destinationAlpha, uint32_t outputAlpha) {
@@ -20,6 +21,28 @@ uint8_t blend_channel(uint8_t source, uint8_t destination, uint32_t sourceAlpha,
   return static_cast<uint8_t>((numerator + outputAlpha / 2) / outputAlpha);
 }
 
+void blend_pixel(const uint8_t* source, uint8_t* destination,
+                 IncrementalBlendOperationNative blend) {
+  if (blend == IncrementalBlendOperationNative::Source || source[3] == 255) {
+    std::memcpy(destination, source, 4);
+    return;
+  }
+  if (source[3] == 0) {
+    return;
+  }
+  const uint32_t sourceAlpha = source[3];
+  const uint32_t destinationAlpha = destination[3];
+  const uint32_t outputAlpha =
+      sourceAlpha * 255 + destinationAlpha * (255 - sourceAlpha);
+  destination[0] = blend_channel(source[0], destination[0], sourceAlpha,
+                                 destinationAlpha, outputAlpha);
+  destination[1] = blend_channel(source[1], destination[1], sourceAlpha,
+                                 destinationAlpha, outputAlpha);
+  destination[2] = blend_channel(source[2], destination[2], sourceAlpha,
+                                 destinationAlpha, outputAlpha);
+  destination[3] = static_cast<uint8_t>((outputAlpha + 127) / 255);
+}
+
 } // namespace
 
 IncrementalAnimationCanvas::IncrementalAnimationCanvas(
@@ -29,13 +52,28 @@ IncrementalAnimationCanvas::IncrementalAnimationCanvas(
     : sourceWidthValue(sourceWidth), sourceHeightValue(sourceHeight),
       outputDimensionsValue(calculate_incremental_output_dimensions(
           sourceWidth, sourceHeight, options)),
-      backgroundValue(background),
-      pixels(static_cast<size_t>(outputDimensionsValue.width) *
-             outputDimensionsValue.height * 4) {
-  for (size_t offset = 0; offset < pixels.size(); offset += 4) {
-    std::copy(backgroundValue.begin(), backgroundValue.end(),
-              pixels.begin() + offset);
+      xAxis(sourceWidth, outputDimensionsValue.width),
+      yAxis(sourceHeight, outputDimensionsValue.height),
+      backgroundValue(background) {
+  if (!fits(sourceWidth, sourceHeight, options)) {
+    throw std::runtime_error("Animation canvas exceeds incremental limits");
   }
+  const auto whole = mapRegion(0, 0, sourceWidth, sourceHeight);
+  sourcePixels.resize(static_cast<size_t>(sourceWidth) * sourceHeight * 4);
+  if (!xAxis.isIdentity() || !yAxis.isIdentity()) {
+    scaledPixels.resize(static_cast<size_t>(outputDimensionsValue.width) *
+                        outputDimensionsValue.height * 4);
+  }
+  fillRegion(whole);
+  refreshOutput(whole);
+}
+
+bool IncrementalAnimationCanvas::fits(
+    uint32_t sourceWidth, uint32_t sourceHeight,
+    const IncrementalDecodeOptionsNative& options) {
+  const uint64_t sourcePixels = static_cast<uint64_t>(sourceWidth) * sourceHeight;
+  return sourcePixels <= std::min<uint64_t>(kMaximumAnimationSourcePixels,
+                                            options.maximumBitmapPixels * 2);
 }
 
 const IncrementalOutputDimensions&
@@ -51,73 +89,56 @@ IncrementalAnimationCanvas::mapRegion(uint32_t left, uint32_t top,
       top > sourceHeightValue - height) {
     throw std::runtime_error("Animation frame exceeds canvas bounds");
   }
-  const uint32_t outputLeft =
-      mapStart(left, sourceWidthValue, outputDimensionsValue.width);
-  const uint32_t outputTop =
-      mapStart(top, sourceHeightValue, outputDimensionsValue.height);
-  const uint32_t outputRight =
-      mapEnd(left, width, sourceWidthValue, outputDimensionsValue.width);
-  const uint32_t outputBottom =
-      mapEnd(top, height, sourceHeightValue, outputDimensionsValue.height);
+  const auto output = area_output_rect(xAxis, yAxis, left, top, width, height);
   return {.sourceLeft = left,
           .sourceTop = top,
           .sourceWidth = width,
           .sourceHeight = height,
-          .outputLeft = outputLeft,
-          .outputTop = outputTop,
-          .outputWidth = outputRight - outputLeft,
-          .outputHeight = outputBottom - outputTop};
+          .outputLeft = output.left,
+          .outputTop = output.top,
+          .outputWidth = output.right - output.left,
+          .outputHeight = output.bottom - output.top};
 }
 
 void IncrementalAnimationCanvas::beginFrame(
-    const IncrementalAnimationRegion&,
+    const IncrementalAnimationRegion& region,
     IncrementalDisposalOperationNative disposal) {
-  if (disposal == IncrementalDisposalOperationNative::Previous) {
-    previousPixels = pixels;
-  } else {
-    previousPixels.clear();
+  previousRegionPixels.clear();
+  if (disposal != IncrementalDisposalOperationNative::Previous) {
+    return;
+  }
+  const size_t regionStride = static_cast<size_t>(region.sourceWidth) * 4;
+  previousRegionPixels.resize(regionStride * region.sourceHeight);
+  for (uint32_t y = 0; y < region.sourceHeight; ++y) {
+    const size_t sourceOffset =
+        (static_cast<size_t>(region.sourceTop + y) * sourceWidthValue +
+         region.sourceLeft) *
+        4;
+    std::memcpy(previousRegionPixels.data() + y * regionStride,
+                sourcePixels.data() + sourceOffset, regionStride);
   }
 }
 
 void IncrementalAnimationCanvas::composite(
     const IncrementalAnimationRegion& region, const uint8_t* rgba,
     IncrementalBlendOperationNative blend) {
-  if (rgba == nullptr || region.outputWidth == 0 || region.outputHeight == 0) {
+  if (rgba == nullptr) {
     throw std::runtime_error("Animation frame pixels are unavailable");
   }
-  for (uint32_t y = 0; y < region.outputHeight; ++y) {
-    for (uint32_t x = 0; x < region.outputWidth; ++x) {
-      const size_t sourceOffset =
-          (static_cast<size_t>(y) * region.outputWidth + x) * 4;
-      const size_t destinationOffset =
-          (static_cast<size_t>(region.outputTop + y) *
-               outputDimensionsValue.width +
-           region.outputLeft + x) *
-          4;
-      const uint8_t* source = rgba + sourceOffset;
-      uint8_t* destination = pixels.data() + destinationOffset;
-      if (blend == IncrementalBlendOperationNative::Source ||
-          source[3] == 255) {
-        std::memcpy(destination, source, 4);
-        continue;
-      }
-      if (source[3] == 0) {
-        continue;
-      }
-
-      const uint32_t sourceAlpha = source[3];
-      const uint32_t destinationAlpha = destination[3];
-      const uint32_t outputAlpha =
-          sourceAlpha * 255 + destinationAlpha * (255 - sourceAlpha);
-      destination[0] = blend_channel(source[0], destination[0], sourceAlpha,
-                                     destinationAlpha, outputAlpha);
-      destination[1] = blend_channel(source[1], destination[1], sourceAlpha,
-                                     destinationAlpha, outputAlpha);
-      destination[2] = blend_channel(source[2], destination[2], sourceAlpha,
-                                     destinationAlpha, outputAlpha);
-      destination[3] = static_cast<uint8_t>((outputAlpha + 127) / 255);
+  for (uint32_t y = 0; y < region.sourceHeight; ++y) {
+    const uint8_t* sourceRow =
+        rgba + static_cast<size_t>(y) * region.sourceWidth * 4;
+    uint8_t* destinationRow =
+        sourcePixels.data() +
+        (static_cast<size_t>(region.sourceTop + y) * sourceWidthValue +
+         region.sourceLeft) *
+            4;
+    for (uint32_t x = 0; x < region.sourceWidth; ++x) {
+      blend_pixel(sourceRow + static_cast<size_t>(x) * 4,
+                  destinationRow + static_cast<size_t>(x) * 4, blend);
     }
   }
+  refreshOutput(region);
 }
 
 std::unique_ptr<IncrementalUpdate> IncrementalAnimationCanvas::makeFrameUpdate(
@@ -142,7 +163,7 @@ std::unique_ptr<IncrementalUpdate> IncrementalAnimationCanvas::makeFrameUpdate(
           .right = region.outputLeft + region.outputWidth,
           .bottom = region.outputTop + region.outputHeight,
           .generation = ++generation,
-          .rgba = std::make_shared<std::vector<uint8_t>>(pixels),
+          .rgba = std::make_shared<std::vector<uint8_t>>(outputPixels()),
       });
   update->animationFrame = std::make_unique<IncrementalAnimationFrameNative>(
       IncrementalAnimationFrameNative{
@@ -161,46 +182,57 @@ void IncrementalAnimationCanvas::disposeFrame(
   case IncrementalDisposalOperationNative::None:
     return;
   case IncrementalDisposalOperationNative::Background:
-    clearRegion(region);
-    return;
+    fillRegion(region);
+    break;
   case IncrementalDisposalOperationNative::Previous:
-    if (previousPixels.size() == pixels.size()) {
-      pixels.swap(previousPixels);
-    } else {
-      clearRegion(region);
+    if (previousRegionPixels.empty()) {
+      fillRegion(region);
+      break;
     }
-    previousPixels.clear();
+    for (uint32_t y = 0; y < region.sourceHeight; ++y) {
+      const size_t regionStride = static_cast<size_t>(region.sourceWidth) * 4;
+      const size_t sourceOffset =
+          (static_cast<size_t>(region.sourceTop + y) * sourceWidthValue +
+           region.sourceLeft) *
+          4;
+      std::memcpy(sourcePixels.data() + sourceOffset,
+                  previousRegionPixels.data() + y * regionStride, regionStride);
+    }
+    previousRegionPixels.clear();
+    break;
+  }
+  refreshOutput(region);
+}
+
+void IncrementalAnimationCanvas::fillRegion(
+    const IncrementalAnimationRegion& region) {
+  for (uint32_t y = 0; y < region.sourceHeight; ++y) {
+    uint8_t* row =
+        sourcePixels.data() +
+        (static_cast<size_t>(region.sourceTop + y) * sourceWidthValue +
+         region.sourceLeft) *
+            4;
+    for (uint32_t x = 0; x < region.sourceWidth; ++x) {
+      std::copy(backgroundValue.begin(), backgroundValue.end(),
+                row + static_cast<size_t>(x) * 4);
+    }
+  }
+}
+
+void IncrementalAnimationCanvas::refreshOutput(
+    const IncrementalAnimationRegion& region) {
+  if (scaledPixels.empty()) {
     return;
   }
+  resample_area_rect(
+      sourcePixels.data(), xAxis, yAxis,
+      AreaOutputRect{.left = region.outputLeft,
+                     .top = region.outputTop,
+                     .right = region.outputLeft + region.outputWidth,
+                     .bottom = region.outputTop + region.outputHeight},
+      scaledPixels.data());
 }
 
-uint32_t IncrementalAnimationCanvas::mapStart(uint32_t coordinate,
-                                              uint32_t sourceSize,
-                                              uint32_t outputSize) const {
-  return static_cast<uint32_t>(static_cast<uint64_t>(coordinate) * outputSize /
-                               sourceSize);
-}
-
-uint32_t IncrementalAnimationCanvas::mapEnd(uint32_t coordinate,
-                                            uint32_t extent,
-                                            uint32_t sourceSize,
-                                            uint32_t outputSize) const {
-  const uint64_t numerator =
-      static_cast<uint64_t>(coordinate + extent) * outputSize;
-  return static_cast<uint32_t>(std::min<uint64_t>(
-      outputSize, (numerator + sourceSize - 1) / sourceSize));
-}
-
-void IncrementalAnimationCanvas::clearRegion(
-    const IncrementalAnimationRegion& region) {
-  for (uint32_t y = 0; y < region.outputHeight; ++y) {
-    for (uint32_t x = 0; x < region.outputWidth; ++x) {
-      const size_t offset = (static_cast<size_t>(region.outputTop + y) *
-                                 outputDimensionsValue.width +
-                             region.outputLeft + x) *
-                            4;
-      std::copy(backgroundValue.begin(), backgroundValue.end(),
-                pixels.begin() + offset);
-    }
-  }
+const std::vector<uint8_t>& IncrementalAnimationCanvas::outputPixels() const {
+  return scaledPixels.empty() ? sourcePixels : scaledPixels;
 }

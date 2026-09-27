@@ -52,6 +52,10 @@ struct IncrementalDecodeTrace {
 
 IncrementalDecodeOptionsNative full_size_options(uint32_t width,
                                                  uint32_t height);
+// Narrows the output to `outputWidth` while leaving the pixel budget at the
+// source size, so only the width limit scales the image.
+IncrementalDecodeOptionsNative scaled_options(uint32_t width, uint32_t height,
+                                              uint32_t outputWidth);
 
 IncrementalDecodeTrace
 decode_in_chunks(const IncrementalDecoderFactory& factory,

@@ -50,6 +50,9 @@ public:
 
     if (state >= WEBP_DEMUX_PARSED_HEADER && canvas == nullptr) {
       initialize(demux.get(), sink);
+      if (resourceUnsupported) {
+        return IncrementalBackendResult::Unsupported;
+      }
     }
     if (canvas != nullptr) {
       publishCompleteFrames(demux.get(), sink);
@@ -84,6 +87,10 @@ private:
     sourceHeight = WebPDemuxGetI(demux, WEBP_FF_CANVAS_HEIGHT);
     loopCount = WebPDemuxGetI(demux, WEBP_FF_LOOP_COUNT);
     hasAlpha = (flags & ALPHA_FLAG) != 0;
+    if (!IncrementalAnimationCanvas::fits(sourceWidth, sourceHeight, options)) {
+      resourceUnsupported = true;
+      return false;
+    }
 
     const uint32_t background = WebPDemuxGetI(demux, WEBP_FF_BACKGROUND_COLOR);
     const std::array<uint8_t, 4> backgroundRgba = {
@@ -145,8 +152,8 @@ private:
                                           static_cast<uint32_t>(frame.y_offset),
                                           static_cast<uint32_t>(frame.width),
                                           static_cast<uint32_t>(frame.height));
-    std::vector<uint8_t> decodedPixels(static_cast<size_t>(region.outputWidth) *
-                                       region.outputHeight * 4);
+    std::vector<uint8_t> decodedPixels(static_cast<size_t>(region.sourceWidth) *
+                                       region.sourceHeight * 4);
 
     WebPDecoderConfig config{};
     if (!WebPInitDecoderConfig(&config)) {
@@ -154,14 +161,9 @@ private:
     }
     config.output.colorspace = MODE_RGBA;
     config.output.u.RGBA.rgba = decodedPixels.data();
-    config.output.u.RGBA.stride = region.outputWidth * 4;
+    config.output.u.RGBA.stride = region.sourceWidth * 4;
     config.output.u.RGBA.size = decodedPixels.size();
     config.output.is_external_memory = 1;
-    config.options.use_scaling =
-        region.outputWidth != static_cast<uint32_t>(frame.width) ||
-        region.outputHeight != static_cast<uint32_t>(frame.height);
-    config.options.scaled_width = region.outputWidth;
-    config.options.scaled_height = region.outputHeight;
     const VP8StatusCode status =
         WebPDecode(frame.fragment.bytes, frame.fragment.size, &config);
     WebPFreeDecBuffer(&config.output);
@@ -170,11 +172,11 @@ private:
     }
 
     std::vector<uint8_t> transformedRow(
-        static_cast<size_t>(region.outputWidth) * 4);
-    for (uint32_t row = 0; row < region.outputHeight; ++row) {
+        static_cast<size_t>(region.sourceWidth) * 4);
+    for (uint32_t row = 0; row < region.sourceHeight; ++row) {
       uint8_t* pixels = decodedPixels.data() +
-                        static_cast<size_t>(row) * region.outputWidth * 4;
-      colorTransform.apply(pixels, transformedRow.data(), region.outputWidth);
+                        static_cast<size_t>(row) * region.sourceWidth * 4;
+      colorTransform.apply(pixels, transformedRow.data(), region.sourceWidth);
       std::memcpy(pixels, transformedRow.data(), transformedRow.size());
     }
 
@@ -228,6 +230,7 @@ private:
   int32_t loopCount = -1;
   int32_t publishedFrameCount = 0;
   bool hasAlpha = false;
+  bool resourceUnsupported = false;
 };
 
 } // namespace

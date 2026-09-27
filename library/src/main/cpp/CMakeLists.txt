@@ -18,6 +18,8 @@ add_library(imagedecoder SHARED
   image_format.cpp
   incremental/color_transform.cpp
   incremental/animation_canvas.cpp
+  incremental/area_resampling.cpp
+  incremental/area_row_resampler.cpp
   incremental/apng_decoder.cpp
   incremental/gif_decoder.cpp
   incremental/image_canvas.cpp

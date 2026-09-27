@@ -14,6 +14,15 @@ IncrementalDecodeOptionsNative full_size_options(uint32_t width,
   };
 }
 
+IncrementalDecodeOptionsNative scaled_options(uint32_t width, uint32_t height,
+                                              uint32_t outputWidth) {
+  return IncrementalDecodeOptionsNative{
+      .preferredOutputWidth = outputWidth,
+      .maximumBitmapPixels = static_cast<uint64_t>(width) * height,
+      .displayProfile = {},
+  };
+}
+
 IncrementalDecodeTrace
 decode_in_chunks(const IncrementalDecoderFactory& factory,
                  const IncrementalDecodeOptionsNative& options,

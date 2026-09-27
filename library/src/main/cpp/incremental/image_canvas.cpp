@@ -62,7 +62,9 @@ IncrementalImageCanvas::IncrementalImageCanvas(
       pixels(std::make_shared<std::vector<uint8_t>>(
           static_cast<size_t>(outputWidthValue) * outputHeightValue * 4)),
       initializedPixels(static_cast<size_t>(outputWidthValue) *
-                        outputHeightValue) {}
+                        outputHeightValue),
+      rowResampler(sourceWidth, sourceHeight, outputDimensions.width,
+                   outputDimensions.height) {}
 
 uint32_t IncrementalImageCanvas::outputWidth() const {
   return outputWidthValue;
@@ -107,19 +109,25 @@ void IncrementalImageCanvas::updatePixel(uint32_t outputX, uint32_t outputY,
   }
   std::memcpy(pixels->data() + pixelIndex * 4, rgba, 4);
   initializedPixels[pixelIndex] = 1;
-  markDirty(outputX, outputY);
+  markDirty(outputX, outputY, outputX + 1, outputY + 1);
 }
 
 void IncrementalImageCanvas::updateSourceRow(uint32_t sourceY,
                                              const uint8_t* rgbaSourceRow) {
-  uint32_t outputY;
-  if (!outputRowForSource(sourceY, &outputY)) {
-    return;
-  }
-  for (uint32_t outputX = 0; outputX < outputWidthValue; ++outputX) {
-    const uint32_t sourceX = sourceXForOutput(outputX);
-    updatePixel(outputX, outputY, rgbaSourceRow + sourceX * 4, true);
-  }
+  rowResampler.addRow(sourceY, rgbaSourceRow,
+                      [this](uint32_t outputY, const uint8_t* rgba) {
+                        writeOutputRow(outputY, rgba);
+                      });
+}
+
+void IncrementalImageCanvas::writeOutputRow(uint32_t outputY,
+                                            const uint8_t* rgba) {
+  const size_t rowStart = static_cast<size_t>(outputY) * outputWidthValue;
+  std::memcpy(pixels->data() + rowStart * 4, rgba,
+              static_cast<size_t>(outputWidthValue) * 4);
+  std::fill_n(initializedPixels.begin() + static_cast<std::ptrdiff_t>(rowStart),
+              outputWidthValue, 1);
+  markDirty(0, outputY, outputWidthValue, outputY + 1);
 }
 
 std::unique_ptr<IncrementalPixelSnapshot>
@@ -156,17 +164,18 @@ IncrementalImageCanvas::takeFullSnapshot() {
   return snapshot;
 }
 
-void IncrementalImageCanvas::markDirty(uint32_t x, uint32_t y) {
+void IncrementalImageCanvas::markDirty(uint32_t left, uint32_t top,
+                                       uint32_t right, uint32_t bottom) {
   if (!dirty) {
-    dirtyLeft = x;
-    dirtyTop = y;
-    dirtyRight = x + 1;
-    dirtyBottom = y + 1;
+    dirtyLeft = left;
+    dirtyTop = top;
+    dirtyRight = right;
+    dirtyBottom = bottom;
     dirty = true;
     return;
   }
-  dirtyLeft = std::min(dirtyLeft, x);
-  dirtyTop = std::min(dirtyTop, y);
-  dirtyRight = std::max(dirtyRight, x + 1);
-  dirtyBottom = std::max(dirtyBottom, y + 1);
+  dirtyLeft = std::min(dirtyLeft, left);
+  dirtyTop = std::min(dirtyTop, top);
+  dirtyRight = std::max(dirtyRight, right);
+  dirtyBottom = std::max(dirtyBottom, bottom);
 }

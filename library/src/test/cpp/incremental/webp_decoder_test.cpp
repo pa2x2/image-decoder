@@ -1,6 +1,7 @@
 #include "fixtures/webp_fixture.h"
 #include "incremental/webp_decoder.h"
 #include "support/decode_harness.h"
+#include "support/scaled_decode_expectations.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -76,10 +77,18 @@ void require_animated_webp_decode() {
   }
 }
 
+void require_scaled_animated_webp_decode() {
+  const auto fixture = make_animated_webp_fixture();
+  require_scaled_frames_are_area_averages(
+      kWebpFactory, fixture.encoded, fixture.width, fixture.height,
+      fixture.width * 3 / 4, 613, "scaled animated WebP");
+}
+
 } // namespace
 
 void run_webp_decoder_tests() {
   run_webp_case(false);
   run_webp_case(true);
   require_animated_webp_decode();
+  require_scaled_animated_webp_decode();
 }

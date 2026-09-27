@@ -225,6 +225,10 @@ private:
             static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
       throw std::runtime_error("APNG animation counts exceed supported limits");
     }
+    if (!IncrementalAnimationCanvas::fits(sourceWidth, sourceHeight, options)) {
+      resourceUnsupported = true;
+      return;
+    }
     canvas = std::make_unique<IncrementalAnimationCanvas>(
         sourceWidth, sourceHeight, options);
     sink(makeInfoUpdate(IncrementalUpdateType::MetadataAvailable));
@@ -308,7 +312,7 @@ private:
     const auto region =
         canvas->mapRegion(frameControl->left, frameControl->top,
                           frameControl->width, frameControl->height);
-    auto decoded = decodeFrame(*frameControl, region);
+    auto decoded = decodeFrame(*frameControl);
     canvas->beginFrame(region, frameControl->disposal);
     canvas->composite(region, decoded.data(), frameControl->blend);
     auto update = canvas->makeFrameUpdate(
@@ -323,8 +327,7 @@ private:
   }
 
   std::vector<uint8_t>
-  decodeFrame(const ApngFrameControl& control,
-              const IncrementalAnimationRegion& region) const {
+  decodeFrame(const ApngFrameControl& control) const {
     std::vector<uint8_t> pngBytes(kPngSignature.begin(), kPngSignature.end());
     auto frameHeader = headerData;
     frameHeader[0] = static_cast<uint8_t>(control.width >> 24);
@@ -423,28 +426,13 @@ private:
       png_read_image(png, rows.data());
       png_read_end(png, info);
 
-      std::vector<uint8_t> output(static_cast<size_t>(region.outputWidth) *
-                                  region.outputHeight * 4);
-      std::vector<uint8_t> transformedRow(static_cast<size_t>(control.width) *
-                                          4);
-      for (uint32_t outputY = 0; outputY < region.outputHeight; ++outputY) {
-        const uint32_t sourceY = std::min<uint32_t>(
-            control.height - 1,
-            (static_cast<uint64_t>(outputY) * 2 + 1) * control.height /
-                (static_cast<uint64_t>(region.outputHeight) * 2));
-        const uint8_t* sourceRow =
-            sourcePixels.data() + static_cast<size_t>(sourceY) * rowBytes;
-        colorTransform.apply(sourceRow, transformedRow.data(), control.width);
-        uint8_t* outputRow = output.data() + static_cast<size_t>(outputY) *
-                                                 region.outputWidth * 4;
-        for (uint32_t outputX = 0; outputX < region.outputWidth; ++outputX) {
-          const uint32_t sourceX = std::min<uint32_t>(
-              control.width - 1,
-              (static_cast<uint64_t>(outputX) * 2 + 1) * control.width /
-                  (static_cast<uint64_t>(region.outputWidth) * 2));
-          std::memcpy(outputRow + outputX * 4,
-                      transformedRow.data() + sourceX * 4, 4);
-        }
+      std::vector<uint8_t> output(static_cast<size_t>(control.width) *
+                                  control.height * 4);
+      for (uint32_t row = 0; row < control.height; ++row) {
+        colorTransform.apply(
+            sourcePixels.data() + static_cast<size_t>(row) * rowBytes,
+            output.data() + static_cast<size_t>(row) * control.width * 4,
+            control.width);
       }
       png_destroy_read_struct(&png, &info, nullptr);
       return output;

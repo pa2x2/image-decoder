@@ -7,7 +7,6 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string_view>
@@ -218,6 +217,10 @@ private:
       return false;
     }
     globalPalette = readPalette(input.data() + 13, globalPaletteSize);
+    if (!IncrementalAnimationCanvas::fits(sourceWidth, sourceHeight, options)) {
+      resourceUnsupported = true;
+      return false;
+    }
 
     std::array<uint8_t, 4> background{0, 0, 0, 0};
     const uint8_t backgroundIndex = input[11];
@@ -320,28 +323,22 @@ private:
     if (palette.empty()) {
       throw std::runtime_error("GIF frame has no color table");
     }
-    const uint64_t sourceFramePixels = static_cast<uint64_t>(width) * height;
-    const uint64_t maximumSourceFramePixels =
-        std::min<uint64_t>(32 * 1024 * 1024, options.maximumBitmapPixels * 2);
-    if (sourceFramePixels > maximumSourceFramePixels ||
-        sourceFramePixels > std::numeric_limits<size_t>::max()) {
-      resourceUnsupported = true;
-      return true;
-    }
+    // Frames lie inside the canvas, whose size was checked against the limits.
+    const auto region = canvas->mapRegion(left, top, width, height);
     GifLzwReader lzw(compressed.data(), compressed.size(), minimumCodeSize);
     const auto indices =
         lzw.decode(static_cast<size_t>(width) * static_cast<size_t>(height));
-    publishFrame(left, top, width, height, interlaced, palette, indices, sink);
+    publishFrame(region, interlaced, palette, indices, sink);
     pendingControl = {};
     return true;
   }
 
-  void publishFrame(uint32_t left, uint32_t top, uint32_t width,
-                    uint32_t height, bool interlaced,
+  void publishFrame(const IncrementalAnimationRegion& region, bool interlaced,
                     const std::vector<std::array<uint8_t, 4>>& palette,
                     const std::vector<uint8_t>& indices,
                     const IncrementalUpdateSink& sink) {
-    const auto region = canvas->mapRegion(left, top, width, height);
+    const uint32_t width = region.sourceWidth;
+    const uint32_t height = region.sourceHeight;
     std::vector<uint32_t> encodedRowForSource(height);
     uint32_t encodedRow = 0;
     if (interlaced) {
@@ -363,23 +360,16 @@ private:
       }
     }
 
-    std::vector<uint8_t> framePixels(static_cast<size_t>(region.outputWidth) *
-                                     region.outputHeight * 4);
-    std::vector<uint8_t> transformedRow(
-        static_cast<size_t>(region.outputWidth) * 4);
-    for (uint32_t outputY = 0; outputY < region.outputHeight; ++outputY) {
-      const uint32_t sourceY = std::min<uint32_t>(
-          height - 1, (static_cast<uint64_t>(outputY) * 2 + 1) * height /
-                          (static_cast<uint64_t>(region.outputHeight) * 2));
-      const size_t encodedRow =
+    std::vector<uint8_t> framePixels(static_cast<size_t>(width) * height * 4);
+    std::vector<uint8_t> transformedRow(static_cast<size_t>(width) * 4);
+    for (uint32_t sourceY = 0; sourceY < height; ++sourceY) {
+      const uint8_t* rowIndices =
+          indices.data() +
           static_cast<size_t>(encodedRowForSource[sourceY]) * width;
-      uint8_t* output = framePixels.data() +
-                        static_cast<size_t>(outputY) * region.outputWidth * 4;
-      for (uint32_t outputX = 0; outputX < region.outputWidth; ++outputX) {
-        const uint32_t sourceX = std::min<uint32_t>(
-            width - 1, (static_cast<uint64_t>(outputX) * 2 + 1) * width /
-                           (static_cast<uint64_t>(region.outputWidth) * 2));
-        const uint8_t index = indices[encodedRow + sourceX];
+      uint8_t* output =
+          framePixels.data() + static_cast<size_t>(sourceY) * width * 4;
+      for (uint32_t sourceX = 0; sourceX < width; ++sourceX) {
+        const uint8_t index = rowIndices[sourceX];
         if (index >= palette.size()) {
           throw std::runtime_error("GIF color index exceeds palette");
         }
@@ -387,9 +377,9 @@ private:
         if (static_cast<int32_t>(index) == pendingControl.transparentIndex) {
           color = {0, 0, 0, 0};
         }
-        std::copy(color.begin(), color.end(), output + outputX * 4);
+        std::copy(color.begin(), color.end(), output + sourceX * 4);
       }
-      colorTransform.apply(output, transformedRow.data(), region.outputWidth);
+      colorTransform.apply(output, transformedRow.data(), width);
       std::memcpy(output, transformedRow.data(), transformedRow.size());
     }
 

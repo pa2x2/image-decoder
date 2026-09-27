@@ -1,6 +1,7 @@
 #ifndef IMAGEDECODER_INCREMENTAL_IMAGE_CANVAS_H
 #define IMAGEDECODER_INCREMENTAL_IMAGE_CANVAS_H
 
+#include "incremental/area_row_resampler.h"
 #include "incremental/format_decoder.h"
 
 #include <cstdint>
@@ -28,12 +29,15 @@ public:
 
   void updatePixel(uint32_t outputX, uint32_t outputY, const uint8_t* rgba,
                    bool overwrite);
+  // Area-averages a complete source row into the output. Each pass must
+  // deliver every row once, top to bottom.
   void updateSourceRow(uint32_t sourceY, const uint8_t* rgbaSourceRow);
   std::unique_ptr<IncrementalPixelSnapshot> takeSnapshot();
   std::unique_ptr<IncrementalPixelSnapshot> takeFullSnapshot();
 
 private:
-  void markDirty(uint32_t x, uint32_t y);
+  void writeOutputRow(uint32_t outputY, const uint8_t* rgba);
+  void markDirty(uint32_t left, uint32_t top, uint32_t right, uint32_t bottom);
 
   uint32_t sourceWidthValue;
   uint32_t sourceHeightValue;
@@ -41,6 +45,7 @@ private:
   uint32_t outputHeightValue;
   std::shared_ptr<std::vector<uint8_t>> pixels;
   std::vector<uint8_t> initializedPixels;
+  IncrementalAreaRowResampler rowResampler;
   uint64_t generation = 0;
   uint32_t dirtyLeft = 0;
   uint32_t dirtyTop = 0;

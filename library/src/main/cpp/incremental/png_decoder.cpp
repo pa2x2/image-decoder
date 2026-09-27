@@ -227,18 +227,22 @@ private:
     if (row == nullptr || canvas == nullptr) {
       return;
     }
+    if (!interlaced) {
+      colorTransform.apply(row, rgbaRow.data(), sourceWidth);
+      canvas->updateSourceRow(rowNumber, rgbaRow.data());
+      return;
+    }
     uint32_t outputY;
     if (!canvas->outputRowForSource(rowNumber, &outputY)) {
       return;
     }
     colorTransform.apply(row, rgbaRow.data(), sourceWidth);
 
-    const bool exactRow =
-        !interlaced || PNG_ROW_IN_INTERLACE_PASS(rowNumber, pass);
+    const bool exactRow = PNG_ROW_IN_INTERLACE_PASS(rowNumber, pass);
     for (uint32_t outputX = 0; outputX < canvas->outputWidth(); ++outputX) {
       const uint32_t sourceX = canvas->sourceXForOutput(outputX);
       const bool exactPixel =
-          exactRow && (!interlaced || PNG_COL_IN_INTERLACE_PASS(sourceX, pass));
+          exactRow && PNG_COL_IN_INTERLACE_PASS(sourceX, pass);
       canvas->updatePixel(outputX, outputY, rgbaRow.data() + sourceX * 4,
                           exactPixel);
     }

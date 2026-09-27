@@ -1,6 +1,7 @@
 #include "fixtures/png_fixture.h"
 #include "incremental/png_decoder.h"
 #include "support/decode_harness.h"
+#include "support/scaled_decode_expectations.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -78,10 +79,22 @@ void require_apng_decode() {
   }
 }
 
+void require_scaled_png_decodes() {
+  const auto still = make_png_fixture(false);
+  require_scaled_still_is_area_average(kPngFactory, still.encoded, still.width,
+                                       still.height, still.width * 3 / 4, 521,
+                                       "scaled PNG");
+  const auto animation = make_animated_png_fixture();
+  require_scaled_frames_are_area_averages(
+      kPngFactory, animation.encoded, animation.width, animation.height,
+      animation.width * 3 / 4, 521, "scaled APNG");
+}
+
 } // namespace
 
 void run_png_decoder_tests() {
   run_png_case(false);
   run_png_case(true);
   require_apng_decode();
+  require_scaled_png_decodes();
 }

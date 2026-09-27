@@ -1,6 +1,7 @@
 #include "fixtures/jpeg_fixture.h"
 #include "incremental/jpeg_decoder.h"
 #include "support/decode_harness.h"
+#include "support/scaled_decode_expectations.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -57,6 +58,12 @@ void run_jpeg_case(bool progressive) {
                       "JPEG output must remain opaque");
   }
   require_truncated_jpeg_fails(fixture);
+  // Three quarters is above every DCT scale, so the resampler does all the
+  // scaling and must replace, not mix, earlier progressive passes.
+  require_scaled_still_is_area_average(
+      kJpegFactory, fixture.encoded, fixture.width, fixture.height,
+      fixture.width * 3 / 4, 509,
+      progressive ? "scaled progressive JPEG" : "scaled baseline JPEG");
 }
 
 } // namespace
