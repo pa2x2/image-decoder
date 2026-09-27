@@ -4,8 +4,8 @@
 
 #include "decoder_jpeg.h"
 #include "cmyk.h"
+#include "downsampling/box_downsampler.h"
 #include "log.h"
-#include "box_downsampler.h"
 #include <algorithm>
 #include <cstring>
 

@@ -16,6 +16,8 @@ struct AnimatedPngFixture {
 };
 
 EncodedImageFixture make_png_fixture(bool adam7);
+// Two-bit grayscale without alpha, which decoders expand to RGBA.
+EncodedImageFixture make_packed_gray_png_fixture(bool adam7);
 AnimatedPngFixture make_animated_png_fixture();
 
 #endif // IMAGEDECODER_INCREMENTAL_TEST_PNG_FIXTURE_H

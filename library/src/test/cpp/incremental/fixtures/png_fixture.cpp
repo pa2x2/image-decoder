@@ -80,7 +80,10 @@ std::vector<uint8_t> make_frame_control(uint32_t sequence,
   return control;
 }
 
-std::vector<uint8_t> encode_png(const std::vector<uint8_t>& rgba, bool adam7) {
+// `pixels` holds one byte per sample; samples narrower than a byte are packed
+// by the writer.
+std::vector<uint8_t> encode_png(const std::vector<uint8_t>& pixels,
+                                int colorType, int bitDepth, bool adam7) {
   std::vector<uint8_t> output;
   png_structp writer =
       png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
@@ -96,23 +99,30 @@ std::vector<uint8_t> encode_png(const std::vector<uint8_t>& rgba, bool adam7) {
         destination->insert(destination->end(), bytes, bytes + size);
       },
       [](png_structp) {});
-  png_set_IHDR(writer, info, kFixtureWidth, kFixtureHeight, 8,
-               PNG_COLOR_TYPE_RGBA,
+  png_set_IHDR(writer, info, kFixtureWidth, kFixtureHeight, bitDepth, colorType,
                adam7 ? PNG_INTERLACE_ADAM7 : PNG_INTERLACE_NONE,
                PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
   png_write_info(writer, info);
+  if (bitDepth < 8) {
+    png_set_packing(writer);
+  }
 
+  const size_t rowBytes = pixels.size() / kFixtureHeight;
   const int passes = adam7 ? png_set_interlace_handling(writer) : 1;
   for (int pass = 0; pass < passes; ++pass) {
     for (uint32_t y = 0; y < kFixtureHeight; ++y) {
       png_write_row(writer,
-                    const_cast<png_bytep>(rgba.data() + static_cast<size_t>(y) *
-                                                            kFixtureWidth * 4));
+                    const_cast<png_bytep>(pixels.data() +
+                                          static_cast<size_t>(y) * rowBytes));
     }
   }
   png_write_end(writer, info);
   png_destroy_write_struct(&writer, &info);
   return output;
+}
+
+std::vector<uint8_t> encode_png(const std::vector<uint8_t>& rgba, bool adam7) {
+  return encode_png(rgba, PNG_COLOR_TYPE_RGBA, 8, adam7);
 }
 
 } // namespace
@@ -124,6 +134,30 @@ EncodedImageFixture make_png_fixture(bool adam7) {
       .height = kFixtureHeight,
       .expectedRgba = source,
       .encoded = encode_png(source, adam7),
+  };
+}
+
+EncodedImageFixture make_packed_gray_png_fixture(bool adam7) {
+  constexpr int bitDepth = 2;
+  std::vector<uint8_t> levels(static_cast<size_t>(kFixtureWidth) *
+                              kFixtureHeight);
+  std::vector<uint8_t> expectedRgba(levels.size() * 4);
+  for (uint32_t y = 0; y < kFixtureHeight; ++y) {
+    for (uint32_t x = 0; x < kFixtureWidth; ++x) {
+      const size_t pixel = static_cast<size_t>(y) * kFixtureWidth + x;
+      levels[pixel] = static_cast<uint8_t>((x * 3 + y * 5 + (x ^ y)) & 3);
+      const auto gray = static_cast<uint8_t>(levels[pixel] * 85);
+      expectedRgba[pixel * 4] = gray;
+      expectedRgba[pixel * 4 + 1] = gray;
+      expectedRgba[pixel * 4 + 2] = gray;
+      expectedRgba[pixel * 4 + 3] = 255;
+    }
+  }
+  return EncodedImageFixture{
+      .width = kFixtureWidth,
+      .height = kFixtureHeight,
+      .expectedRgba = std::move(expectedRgba),
+      .encoded = encode_png(levels, PNG_COLOR_TYPE_GRAY, bitDepth, adam7),
   };
 }
 

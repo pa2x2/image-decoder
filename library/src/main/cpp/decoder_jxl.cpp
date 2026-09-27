@@ -3,7 +3,7 @@
 //
 
 #include "decoder_jxl.h"
-#include "box_downsampler.h"
+#include "downsampling/box_downsampler.h"
 #include <cstring>
 
 JpegxlDecoder::JpegxlDecoder(std::shared_ptr<Stream>&& stream, bool cropBorders,

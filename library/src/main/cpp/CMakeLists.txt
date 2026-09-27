@@ -26,7 +26,7 @@ add_library(imagedecoder SHARED
   incremental/session.cpp
   incremental_java_wrapper.cpp
   borders.cpp
-  box_downsampler.cpp
+  downsampling/box_downsampler.cpp
 )
 
 target_include_directories(imagedecoder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -50,6 +50,7 @@ if(WITH_PNG)
   add_definitions(-DHAVE_LIBPNG)
   target_sources(imagedecoder PRIVATE
     decoder_png.cpp
+    downsampling/adam7_box_downsampler.cpp
     incremental/png_decoder.cpp
   )
 endif()

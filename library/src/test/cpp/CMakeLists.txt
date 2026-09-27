@@ -81,15 +81,19 @@ find_package(JNI REQUIRED)
 pkg_check_modules(JXL_THREADS REQUIRED IMPORTED_TARGET libjxl_threads)
 
 add_executable(decoder_host_tests
-  box_downsampler_test.cpp
+  downsampling/box_block_sums_test.cpp
+  downsampling/box_downsampler_test.cpp
+  sampled_decode_memory_test.cpp
   sampled_decode_test.cpp
+  support/peak_allocation.cpp
   test_main.cpp
   incremental/fixtures/image_pattern.cpp
   incremental/fixtures/jpeg_fixture.cpp
   incremental/fixtures/jxl_fixture.cpp
   incremental/fixtures/png_fixture.cpp
   incremental/support/decode_harness.cpp
-  ${PRODUCTION_ROOT}/box_downsampler.cpp
+  ${PRODUCTION_ROOT}/downsampling/adam7_box_downsampler.cpp
+  ${PRODUCTION_ROOT}/downsampling/box_downsampler.cpp
 )
 
 # The regular decoders predate the host tests and are held to the Android

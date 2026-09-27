@@ -3,7 +3,7 @@
 //
 
 #include "decoder_heif.h"
-#include "box_downsampler.h"
+#include "downsampling/box_downsampler.h"
 #include <cstring>
 
 bool is_libheif_compatible(const uint8_t* bytes, uint32_t size) {

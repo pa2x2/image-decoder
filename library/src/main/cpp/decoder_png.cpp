@@ -3,7 +3,8 @@
 //
 
 #include "decoder_png.h"
-#include "box_downsampler.h"
+#include "downsampling/adam7_box_downsampler.h"
+#include "downsampling/box_downsampler.h"
 #include <algorithm>
 #include <cstring>
 
@@ -188,16 +189,20 @@ void PngDecoder::decode(uint8_t* outPixels, Rect outRect, Rect inRect,
 
   cmsCloseProfile(src_profile);
 
-  int32_t passes = png_set_interlace_handling(png);
+  const bool interlaced =
+      png_get_interlace_type(png, pinfo) != PNG_INTERLACE_NONE;
+  // Sampled decodes of interlaced images read the reduced rows of each pass
+  // themselves, so libpng only merges passes into full rows when unsampled.
+  const int32_t passes = sampleSize == 1 ? png_set_interlace_handling(png) : 1;
 
   png_read_update_info(png, pinfo);
 
   uint32_t inComponents = png_get_channels(png, pinfo);
-  uint32_t inStride = info.imageWidth * inComponents;
-  uint32_t inStrideOffset = inRect.x * inComponents;
+  size_t inStride = static_cast<size_t>(info.imageWidth) * inComponents;
+  size_t inStrideOffset = static_cast<size_t>(inRect.x) * inComponents;
 
   uint8_t* outPixelsPos = outPixels;
-  uint32_t outStride = outRect.width * inComponents;
+  size_t outStride = static_cast<size_t>(outRect.width) * inComponents;
 
   if (sampleSize == 1) {
     uint32_t inRemainY = info.imageHeight - inRect.height - inRect.y;
@@ -219,7 +224,7 @@ void PngDecoder::decode(uint8_t* outPixels, Rect outRect, Rect inRect,
       auto inPixels = std::vector<uint8_t>(inStride * inRect.height);
       auto* inPixelsPos = inPixels.data();
 
-      while (--passes >= 0) {
+      for (int32_t pass = 0; pass < passes; ++pass) {
         png_skip_rows(png, inRect.y);
         for (uint32_t i = 0; i < inRect.height; ++i) {
           png_read_row(png, inPixelsPos, nullptr);
@@ -235,49 +240,44 @@ void PngDecoder::decode(uint8_t* outPixels, Rect outRect, Rect inRect,
         outPixelsPos += outStride;
       }
     }
-  } else {
+  } else if (!interlaced) {
     // Alpha is always present: missing alpha is filled in above.
     BoxDownsampler downsampler(outRect.width, sampleSize, inComponents, true);
-    uint32_t inHeightRounded = outRect.height * sampleSize;
+    auto inRow = std::vector<uint8_t>(inStride);
+    uint8_t* inRowPtr = inRow.data();
 
-    if (passes == 1) {
-      auto inRow = std::vector<uint8_t>(inStride);
-      uint8_t* inRowPtr = inRow.data();
-
-      png_skip_rows(png, inRect.y);
-      for (uint32_t i = 0; i < outRect.height; ++i) {
-        for (uint32_t row = 0; row < sampleSize; ++row) {
-          png_read_row(png, inRowPtr, nullptr);
-          downsampler.addRow(inRowPtr + inStrideOffset);
-        }
-        downsampler.writeRow(outPixelsPos);
-        outPixelsPos += outStride;
+    png_skip_rows(png, inRect.y);
+    for (uint32_t i = 0; i < outRect.height; ++i) {
+      for (uint32_t row = 0; row < sampleSize; ++row) {
+        png_read_row(png, inRowPtr, nullptr);
+        downsampler.addRow(inRowPtr + inStrideOffset);
       }
-    } else {
-      // Every pass contributes to every row, so the rows of the region have to
-      // be kept until the last pass has been combined into them.
-      auto inPixels = std::vector<uint8_t>(inStride * inHeightRounded);
-      uint32_t inRemainY = info.imageHeight - inHeightRounded - inRect.y;
+      downsampler.writeRow(outPixelsPos);
+      outPixelsPos += outStride;
+    }
+  } else {
+    // Each pixel belongs to exactly one Adam7 pass, and the passes each span
+    // the whole image, so blocks complete only with the last pass.
+    Adam7BoxDownsampler downsampler(inRect, outRect, sampleSize, inComponents,
+                                    true);
+    // libpng copies a full image row even for the narrower pass rows.
+    auto passRow = std::vector<uint8_t>(png_get_rowbytes(png, pinfo));
 
-      while (--passes >= 0) {
-        png_skip_rows(png, inRect.y);
-        uint8_t* inPixelsPos = inPixels.data();
-        for (uint32_t i = 0; i < inHeightRounded; ++i) {
-          png_read_row(png, inPixelsPos, nullptr);
-          inPixelsPos += inStride;
-        }
-        png_skip_rows(png, inRemainY);
+    for (int pass = 0; pass < Adam7BoxDownsampler::kPasses; ++pass) {
+      // libpng skips the passes that have no pixels.
+      if (PNG_PASS_COLS(info.imageWidth, pass) == 0) {
+        continue;
       }
-
-      const uint8_t* inPixelsPos = inPixels.data() + inStrideOffset;
-      for (uint32_t i = 0; i < outRect.height; ++i) {
-        for (uint32_t row = 0; row < sampleSize; ++row) {
-          downsampler.addRow(inPixelsPos);
-          inPixelsPos += inStride;
+      const uint32_t passRows = PNG_PASS_ROWS(info.imageHeight, pass);
+      for (uint32_t row = 0; row < passRows; ++row) {
+        if (downsampler.coversPassRow(pass, row)) {
+          png_read_row(png, passRow.data(), nullptr);
+          downsampler.addPassRow(pass, row, passRow.data());
+        } else {
+          png_read_row(png, nullptr, nullptr);
         }
-        downsampler.writeRow(outPixelsPos);
-        outPixelsPos += outStride;
       }
     }
+    downsampler.write(outPixels);
   }
 }
