@@ -454,7 +454,10 @@ private:
             .isAnimated = type == IncrementalUpdateType::Complete
                               ? publishedFrameCount > 1
                               : true,
-            .hasAlpha = hasAlpha,
+            // Transparency is declared per frame, after metadata is published,
+            // so only completion can rule it out.
+            .hasAlpha = type == IncrementalUpdateType::Complete ? hasAlpha
+                                                                : true,
             .frameCount = type == IncrementalUpdateType::Complete
                               ? publishedFrameCount
                               : -1,
