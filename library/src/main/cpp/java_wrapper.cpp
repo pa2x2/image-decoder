@@ -2,13 +2,13 @@
 // Created by len on 23/12/20.
 //
 
+#include "alpha_premultiplication.h"
 #include "borders.h"
 #include "decoder_base.h"
 #include "decoders.h"
 #include "java_objects.h"
 #include "java_stream.h"
 #include <android/bitmap.h>
-#include <cstring>
 #include <jni.h>
 #include <lcms2.h>
 #include <vector>
@@ -132,25 +132,30 @@ Java_tachiyomi_decoder_ImageDecoder_nativeDecode(JNIEnv* env, jobject,
   }
 
   try {
-    std::vector<uint8_t> out_buffer(outRect.width * outRect.height * 4);
+    const size_t pixelCount =
+        static_cast<size_t>(outRect.width) * outRect.height;
+    std::vector<uint8_t> out_buffer(pixelCount * 4);
     uint8_t* pout_buffer = out_buffer.data();
 
     decoder->decode(pout_buffer, outRect, inRect, sampleSize);
 
+    // Decoding and color management use straight alpha; the bitmap is
+    // premultiplied.
     if (decoder->useTransform) {
-      cmsDoTransform(decoder->transform, pout_buffer, pixels,
-                     outRect.width * outRect.height);
+      cmsDoTransform(decoder->transform, pout_buffer, pixels, pixelCount);
 
       if (decoder->inType == TYPE_CMYK_8 ||
           decoder->inType == TYPE_CMYK_8_REV ||
           decoder->inType == TYPE_GRAY_8) {
-        for (int i = 0; i < outRect.width * outRect.height; i++) {
+        for (size_t i = 0; i < pixelCount; i++) {
           pixels[i * 4 + 3] = 255;
         }
+      } else {
+        premultiply_rgba(pixels, pixels, pixelCount);
       }
     } else {
-      // out_buffer must be rgba.
-      memcpy(pixels, out_buffer.data(), outRect.width * outRect.height * 4);
+      // out_buffer must be straight rgba.
+      premultiply_rgba(pout_buffer, pixels, pixelCount);
     }
   } catch (std::exception& ex) {
     LOGE("%s", ex.what());

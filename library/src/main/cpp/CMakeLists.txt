@@ -12,6 +12,7 @@ option(WITH_AVIF "Include AVIF decoder" ON)
 option(WITH_JXL "Include JXL decoder" ON)
 
 add_library(imagedecoder SHARED
+  alpha_premultiplication.cpp
   java_stream.cpp
   java_wrapper.cpp
   java_objects.cpp

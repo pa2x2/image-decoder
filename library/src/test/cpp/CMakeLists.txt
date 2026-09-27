@@ -81,10 +81,12 @@ find_package(JNI REQUIRED)
 pkg_check_modules(JXL_THREADS REQUIRED IMPORTED_TARGET libjxl_threads)
 
 add_executable(decoder_host_tests
+  alpha_premultiplication_test.cpp
   downsampling/box_block_sums_test.cpp
   downsampling/box_downsampler_test.cpp
   sampled_decode_memory_test.cpp
   sampled_decode_test.cpp
+  straight_alpha_decode_test.cpp
   support/peak_allocation.cpp
   test_main.cpp
   incremental/fixtures/image_pattern.cpp
@@ -92,6 +94,7 @@ add_executable(decoder_host_tests
   incremental/fixtures/jxl_fixture.cpp
   incremental/fixtures/png_fixture.cpp
   incremental/support/decode_harness.cpp
+  ${PRODUCTION_ROOT}/alpha_premultiplication.cpp
   ${PRODUCTION_ROOT}/downsampling/adam7_box_downsampler.cpp
   ${PRODUCTION_ROOT}/downsampling/box_downsampler.cpp
 )

@@ -16,6 +16,9 @@ struct AnimatedJxlFixture {
 };
 
 EncodedImageFixture make_jxl_still_fixture(bool progressive);
+// Lossless, with its alpha stored premultiplied. `expectedRgba` holds the
+// straight colors it was made from.
+EncodedImageFixture make_premultiplied_alpha_jxl_fixture();
 EncodedImageFixture make_large_jxl_benchmark_fixture();
 AnimatedJxlFixture make_animated_jxl_fixture();
 

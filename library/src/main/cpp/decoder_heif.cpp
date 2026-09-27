@@ -3,6 +3,7 @@
 //
 
 #include "decoder_heif.h"
+#include "alpha_premultiplication.h"
 #include "downsampling/box_downsampler.h"
 #include <cstring>
 
@@ -122,6 +123,15 @@ void HeifDecoder::decode(uint8_t* outPixels, Rect outRect, Rect inRect,
 
   int stride;
   uint8_t* inPixels = img.get_plane(heif_channel_interleaved, &stride);
+
+  // libheif keeps premultiplied alpha as stored, but color management,
+  // averaging and the bitmap conversion expect straight alpha.
+  if (img.is_premultiplied_alpha()) {
+    for (uint32_t row = 0; row < info.imageHeight; ++row) {
+      unpremultiply_rgba(inPixels + static_cast<size_t>(row) * stride,
+                         info.imageWidth);
+    }
+  }
 
   // Calculate stride of the decoded image with the requested region
   uint32_t inStride = stride;

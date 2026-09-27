@@ -1,8 +1,8 @@
+#include "alpha_premultiplication.h"
 #include "incremental/session.h"
 #include "java_objects.h"
 
 #include <android/bitmap.h>
-#include <cstring>
 #include <jni.h>
 #include <memory>
 #include <utility>
@@ -243,10 +243,13 @@ Java_tachiyomi_decoder_incremental_IncrementalImageDecoder_nativePollUpdate(
                       "Failed to access incremental bitmap pixels");
       return nullptr;
     }
+    // Snapshots stay straight so later updates can keep compositing and
+    // resampling them; only the bitmap copy is premultiplied.
     for (uint32_t row = 0; row < update.snapshot->height; ++row) {
-      std::memcpy(static_cast<uint8_t*>(bitmapPixels) + row * bitmapInfo.stride,
-                  update.snapshot->rgba->data() + row * sourceStride,
-                  sourceStride);
+      premultiply_rgba(update.snapshot->rgba->data() + row * sourceStride,
+                       static_cast<uint8_t*>(bitmapPixels) +
+                           static_cast<size_t>(row) * bitmapInfo.stride,
+                       update.snapshot->width);
     }
     AndroidBitmap_unlockPixels(env, bitmap);
   }

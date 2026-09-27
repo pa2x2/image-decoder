@@ -95,7 +95,8 @@ std::vector<uint8_t> encode_jxl(uint32_t width, uint32_t height,
                                 const std::vector<std::vector<uint8_t>>& frames,
                                 const std::vector<uint32_t>& frameDurations,
                                 uint32_t loopCount, bool alpha,
-                                bool progressive, bool lossless) {
+                                bool progressive, bool lossless,
+                                bool premultipliedAlpha = false) {
   require_condition(!frames.empty(), "JXL fixture must contain a frame");
   require_condition(frameDurations.empty() ||
                         frameDurations.size() == frames.size(),
@@ -126,7 +127,7 @@ std::vector<uint8_t> encode_jxl(uint32_t width, uint32_t height,
     info.num_extra_channels = 1;
     info.alpha_bits = 8;
     info.alpha_exponent_bits = 0;
-    info.alpha_premultiplied = JXL_FALSE;
+    info.alpha_premultiplied = premultipliedAlpha ? JXL_TRUE : JXL_FALSE;
   }
   require_encoder_success(JxlEncoderSetBasicInfo(encoder.get(), &info),
                           "JXL fixture basic info must be accepted");
@@ -136,7 +137,7 @@ std::vector<uint8_t> encode_jxl(uint32_t width, uint32_t height,
     JxlEncoderInitExtraChannelInfo(JXL_CHANNEL_ALPHA, &alphaInfo);
     alphaInfo.bits_per_sample = 8;
     alphaInfo.exponent_bits_per_sample = 0;
-    alphaInfo.alpha_premultiplied = JXL_FALSE;
+    alphaInfo.alpha_premultiplied = premultipliedAlpha ? JXL_TRUE : JXL_FALSE;
     require_encoder_success(
         JxlEncoderSetExtraChannelInfo(encoder.get(), 0, &alphaInfo),
         "JXL fixture alpha info must be accepted");
@@ -241,6 +242,29 @@ EncodedImageFixture make_jxl_still_fixture(bool progressive) {
       .width = width,
       .height = height,
       .expectedRgba = std::move(expected),
+      .encoded = std::move(encoded),
+  };
+}
+
+EncodedImageFixture make_premultiplied_alpha_jxl_fixture() {
+  auto straight = make_fixture_pattern(true);
+  // A premultiplied JXL stores its colors already multiplied by alpha.
+  auto premultiplied = straight;
+  for (size_t offset = 0; offset < premultiplied.size(); offset += 4) {
+    const uint32_t alpha = premultiplied[offset + 3];
+    for (size_t component = 0; component < 3; ++component) {
+      premultiplied[offset + component] = static_cast<uint8_t>(
+          (premultiplied[offset + component] * alpha + 127) / 255);
+    }
+  }
+  std::vector<std::vector<uint8_t>> frames;
+  frames.push_back(std::move(premultiplied));
+  auto encoded = encode_jxl(kFixtureWidth, kFixtureHeight, frames, {}, 0, true,
+                            false, true, true);
+  return EncodedImageFixture{
+      .width = kFixtureWidth,
+      .height = kFixtureHeight,
+      .expectedRgba = std::move(straight),
       .encoded = std::move(encoded),
   };
 }

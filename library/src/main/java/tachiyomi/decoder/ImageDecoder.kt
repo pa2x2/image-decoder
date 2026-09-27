@@ -119,6 +119,8 @@ class ImageDecoder private constructor(
     @JvmStatic
     private external fun nativeFindType(bytes: ByteArray): ImageType?
 
+    // Native code writes premultiplied pixels, which is what these bitmaps
+    // hold by default.
     @JvmStatic
     private fun createBitmap(width: Int, height: Int): Bitmap? {
       return try {

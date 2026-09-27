@@ -34,6 +34,12 @@ void JpegxlDecoder::decode() {
     throw std::runtime_error("JxlDecoderSetParallelRunner failed");
   }
 
+  // Color management and averaging expect straight alpha, also for images
+  // stored premultiplied. Pixels are premultiplied once, for the bitmap.
+  if (JXL_DEC_SUCCESS != JxlDecoderSetUnpremultiplyAlpha(dec.get(), JXL_TRUE)) {
+    throw std::runtime_error("JxlDecoderSetUnpremultiplyAlpha failed");
+  }
+
   JxlDecoderSetInput(dec.get(), stream->bytes, stream->size);
   JxlDecoderCloseInput(dec.get());
 

@@ -2,10 +2,12 @@
 #include <iostream>
 #include <string_view>
 
+void run_alpha_premultiplication_tests();
 void run_box_block_sums_tests();
 void run_box_downsampler_tests();
 void run_sampled_decode_memory_tests();
 void run_sampled_decode_tests();
+void run_straight_alpha_decode_tests();
 
 namespace {
 
@@ -23,6 +25,8 @@ bool run_suite(std::string_view name, void (*suite)()) {
 } // namespace
 
 int main() {
+  const bool premultiplicationPassed =
+      run_suite("alpha premultiplication", run_alpha_premultiplication_tests);
   const bool blockSumsPassed =
       run_suite("box block sums", run_box_block_sums_tests);
   const bool downsamplerPassed =
@@ -30,8 +34,10 @@ int main() {
   const bool sampledPassed = run_suite("sampled decode", run_sampled_decode_tests);
   const bool sampledMemoryPassed =
       run_suite("sampled decode memory", run_sampled_decode_memory_tests);
-  return blockSumsPassed && downsamplerPassed && sampledPassed &&
-                 sampledMemoryPassed
+  const bool straightAlphaPassed =
+      run_suite("straight alpha decode", run_straight_alpha_decode_tests);
+  return premultiplicationPassed && blockSumsPassed && downsamplerPassed &&
+                 sampledPassed && sampledMemoryPassed && straightAlphaPassed
              ? 0
              : 1;
 }
