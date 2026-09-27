@@ -6,6 +6,7 @@
 #define IMAGEDECODER_BORDERS_H
 
 #include "rect.h"
+#include <cstdint>
 
 /** A line will be considered as having content if 0.25% of it is filled. */
 const float filledRatioLimit = 0.0025;

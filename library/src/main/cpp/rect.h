@@ -5,7 +5,7 @@
 #ifndef IMAGEDECODER_RECT_H
 #define IMAGEDECODER_RECT_H
 
-#include <sys/types.h>
+#include <cstdint>
 
 struct Rect {
   uint32_t x;
