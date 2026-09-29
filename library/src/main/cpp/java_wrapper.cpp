@@ -90,8 +90,10 @@ Java_tachiyomi_decoder_ImageDecoder_nativeNewInstance(JNIEnv* env, jclass,
     return nullptr;
   }
 
-  Rect bounds = decoder->info.bounds;
-  return create_image_decoder(env, (jlong)decoder, bounds.width, bounds.height);
+  const ImageInfo& info = decoder->info;
+  return create_image_decoder(env, (jlong)decoder, info.imageWidth,
+                              info.imageHeight, info.bounds.x, info.bounds.y,
+                              info.bounds.width, info.bounds.height);
 }
 
 extern "C" JNIEXPORT jobject JNICALL

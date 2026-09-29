@@ -10,9 +10,22 @@ import kotlin.concurrent.write
 
 class ImageDecoder private constructor(
   private val nativePtr: Long,
+  /** Width of the whole encoded image, before any border cropping. */
+  val sourceWidth: Int,
+  /** Height of the whole encoded image, before any border cropping. */
+  val sourceHeight: Int,
+  private val left: Int,
+  private val top: Int,
   val width: Int,
   val height: Int
 ) {
+
+  /**
+   * The part of the encoded image this decoder serves, in source pixels: the whole image, or what is left once borders
+   * are cropped. Regions passed to [decode] are relative to its top-left corner.
+   */
+  val bounds: Rect
+    get() = Rect(left, top, left + width, top + height)
 
   var isRecycled = false
     private set
