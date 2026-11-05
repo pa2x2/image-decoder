@@ -1,0 +1,122 @@
+name: Release
+
+# Builds the Android AAR and the desktop JVM jar from one commit and publishes them as GitHub release
+# image-decoder-<VERSION_NAME>, with a SHA256SUMS file. Consumers resolve them through an Ivy repository with the
+# pattern image-decoder-[revision]/[artifact]-[revision].[ext] under this repository's releases/download URL.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ZIG_VERSION: 0.17.0
+  ZIG_SHA256: 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
+  # The oldest glibc the desktop library may need; native/cmake/zig-cc targets it.
+  GLIBC_FLOOR: "2.28"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version: 21
+          distribution: temurin
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt update
+          sudo apt install build-essential meson ninja-build nasm
+
+      - name: Install zig
+        run: |
+          curl -fsSL -o zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  zig.tar.xz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/zig"
+          tar -xf zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+
+      - name: Set up Gradle Cache and Environment
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(sed -n 's/^VERSION_NAME=//p' gradle.properties)
+          group=$(sed -n 's/^GROUP=//p' gradle.properties)
+          tag="image-decoder-$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "::error::$tag already exists; bump VERSION_NAME in gradle.properties"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "group=$group" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # The JVM tests run on the desktop library the jar ships.
+      - name: Test and build the artifacts
+        run: >-
+          ./gradlew --console=plain --warning-mode=all
+          :library:jvmTest
+          :library:publishAndroidPublicationToMavenLocal
+          :library:publishJvmPublicationToMavenLocal
+
+      - name: Stage and check the artifacts
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GROUP: ${{ steps.version.outputs.group }}
+        run: |
+          repo="$HOME/.m2/repository/${GROUP//.//}"
+          mkdir dist
+          cp "$repo/image-decoder-android/$VERSION/image-decoder-android-$VERSION.aar" dist/
+          cp "$repo/image-decoder-jvm/$VERSION/image-decoder-jvm-$VERSION.jar" dist/
+          cp LICENSE "dist/image-decoder-$VERSION-LICENSE.txt"
+
+          aar="dist/image-decoder-android-$VERSION.aar"
+          unzip -o -q "$aar" 'jni/*' -d aar-libs
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            [ -f "aar-libs/jni/$abi/libimagedecoder.so" ] || { echo "::error::$abi missing from the AAR"; exit 1; }
+          done
+          # Android 15+ devices with 16 KB pages need 16 KB aligned LOAD segments in 64-bit libraries.
+          for abi in arm64-v8a x86_64; do
+            so="aar-libs/jni/$abi/libimagedecoder.so"
+            if readelf -lW "$so" | awk '$1 == "LOAD" && $NF != "0x4000" { bad = 1 } END { exit !bad }'; then
+              echo "::error::$so is not 16 KB aligned"; exit 1
+            fi
+          done
+
+          jar="dist/image-decoder-jvm-$VERSION.jar"
+          unzip -o -q "$jar" 'jni/*' -d jar-libs
+          so=jar-libs/jni/linux_x64/libimagedecoder.so
+          [ -f "$so" ] || { echo "::error::linux_x64 missing from the jar"; exit 1; }
+          # Only glibc's own libraries, no glibc symbol newer than the floor, and only the JNI entry points exported.
+          needed=$(readelf -dW "$so" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' |
+            grep -v -x -E 'libc\.so\.6|libm\.so\.6|libpthread\.so\.0|libdl\.so\.2|librt\.so\.1|ld-linux-x86-64\.so\.2' || true)
+          [ -z "$needed" ] || { echo "::error::the desktop library needs $needed"; exit 1; }
+          newest=$(readelf -W --dyn-syms "$so" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
+          [ "$(printf '%s\n%s\n' "$newest" "$GLIBC_FLOOR" | sort -V | tail -1)" = "$GLIBC_FLOOR" ] ||
+            { echo "::error::the desktop library uses glibc $newest symbols"; exit 1; }
+          exported=$(readelf -W --dyn-syms "$so" | awk '$5 != "LOCAL" && $7 != "UND" && $8 != "" { print $8 }' |
+            grep -v -E '^(JNI_OnLoad|Java_)' || true)
+          [ -z "$exported" ] || { echo "::error::the desktop library exports $exported"; exit 1; }
+
+          (cd dist && sha256sum -- * > "image-decoder-$VERSION-SHA256SUMS.txt")
+          cat "dist/image-decoder-$VERSION-SHA256SUMS.txt"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "image-decoder $VERSION" \
+            --notes "Built by the Release workflow from $GITHUB_SHA. Checksums: image-decoder-$VERSION-SHA256SUMS.txt."

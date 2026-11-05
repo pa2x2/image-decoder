@@ -1,0 +1,14 @@
+//
+// Created by len on 23/12/20.
+//
+
+#ifndef IMAGEDECODER_JAVA_OBJECTS_H
+#define IMAGEDECODER_JAVA_OBJECTS_H
+
+#include <jni.h>
+
+void init_java_objects(JNIEnv* env);
+
+jobject create_image_type(JNIEnv* env, jint format, jboolean isAnimated);
+
+#endif // IMAGEDECODER_JAVA_OBJECTS_H
