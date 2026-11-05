@@ -108,7 +108,7 @@ jobs:
           newest=$(readelf -W --dyn-syms "$so" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -1)
           [ "$(printf '%s\n%s\n' "$newest" "$GLIBC_FLOOR" | sort -V | tail -1)" = "$GLIBC_FLOOR" ] ||
             { echo "::error::the desktop library uses glibc $newest symbols"; exit 1; }
-          exported=$(readelf -W --dyn-syms "$so" | awk '$5 != "LOCAL" && $7 != "UND" && $8 != "" { print $8 }' |
+          exported=$(readelf -W --dyn-syms "$so" | awk '$1 ~ /^[0-9]+:$/ && $5 != "LOCAL" && $7 != "UND" && $8 != "" { print $8 }' |
             grep -v -E '^(JNI_OnLoad|Java_)' || true)
           [ -z "$exported" ] || { echo "::error::the desktop library exports $exported"; exit 1; }
 
