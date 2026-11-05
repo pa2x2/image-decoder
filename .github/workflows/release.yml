@@ -8,48 +8,25 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 env:
-  ZIG_VERSION: 0.17.0
-  ZIG_SHA256: 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
   # The oldest glibc the desktop library may need; native/cmake/zig-cc targets it.
   GLIBC_FLOOR: "2.28"
 
 jobs:
-  release:
+  # Runs first so a version that is already released fails before the native builds start.
+  version:
     runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      group: ${{ steps.version.outputs.group }}
+      tag: ${{ steps.version.outputs.tag }}
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
-        with:
-          java-version: 21
-          distribution: temurin
-
-      - name: Install native build dependencies
-        run: |
-          sudo apt update
-          sudo apt install build-essential meson ninja-build nasm
-
-      - name: Install zig
-        run: |
-          curl -fsSL -o zig.tar.xz "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
-          echo "$ZIG_SHA256  zig.tar.xz" | sha256sum -c -
-          mkdir "$RUNNER_TEMP/zig"
-          tar -xf zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
-          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
-
-      - name: Install the Android NDK
-        run: |
-          ndk=$(sed -n 's/^android-ndk = "\(.*\)"/\1/p' gradle/libs.versions.toml)
-          echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
-
-      - name: Set up Gradle Cache and Environment
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
       - name: Read the version
         id: version
@@ -61,22 +38,62 @@ jobs:
             echo "::error::$tag already exists; bump VERSION_NAME in gradle.properties"
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "group=$group" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "group=$group"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+  native:
+    needs: version
+    uses: ./.github/workflows/native-libraries.yml
+
+  release:
+    needs: [version, native]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version: 21
+          distribution: temurin
+
+      - name: Set up Gradle Cache and Environment
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+
+      - name: Download the desktop library
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-desktop
+          path: prebuilt/desktop
+
+      - name: Download the Android libraries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: native-android-*
+          merge-multiple: true
+          path: prebuilt/android
 
       # The JVM tests run on the desktop library the jar ships.
       - name: Test and build the artifacts
         run: >-
           ./gradlew --console=plain --warning-mode=all
+          -PprebuiltNativeLibraries="$PWD/prebuilt"
           :library:jvmTest
           :library:publishAndroidPublicationToMavenLocal
           :library:publishJvmPublicationToMavenLocal
 
       - name: Stage and check the artifacts
         env:
-          VERSION: ${{ steps.version.outputs.version }}
-          GROUP: ${{ steps.version.outputs.group }}
+          VERSION: ${{ needs.version.outputs.version }}
+          GROUP: ${{ needs.version.outputs.group }}
         run: |
           repo="$HOME/.m2/repository/${GROUP//.//}"
           mkdir dist
@@ -99,7 +116,7 @@ jobs:
 
           jar="dist/image-decoder-jvm-$VERSION.jar"
           unzip -o -q "$jar" 'jni/*' -d jar-libs
-          so=jar-libs/jni/linux_x64/libimagedecoder.so
+          so="jar-libs/jni/linux_x64/libimagedecoder.so"
           [ -f "$so" ] || { echo "::error::linux_x64 missing from the jar"; exit 1; }
           # Only glibc's own libraries, no glibc symbol newer than the floor, and only the JNI entry points exported.
           needed=$(readelf -dW "$so" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' |
@@ -118,8 +135,8 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           gh release create "$TAG" dist/* \
             --target "$GITHUB_SHA" \

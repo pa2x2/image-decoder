@@ -1,4 +1,3 @@
-import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.MapProperty
@@ -6,7 +5,6 @@ import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
-import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
@@ -18,7 +16,7 @@ import javax.inject.Inject
  * build's [libraryFileName] into that entry's subdirectory of [outputDirectory]. CMake's build
  * directories persist under [workDirectory], so an unchanged library only costs a no-op Ninja run.
  */
-abstract class CMakeLibraryBuild : DefaultTask() {
+abstract class CMakeLibraryBuild : NativeLibrariesTask() {
 
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
@@ -39,9 +37,6 @@ abstract class CMakeLibraryBuild : DefaultTask() {
 
     @get:Internal
     abstract val workDirectory: DirectoryProperty
-
-    @get:OutputDirectory
-    abstract val outputDirectory: DirectoryProperty
 
     @get:Inject
     protected abstract val exec: ExecOperations

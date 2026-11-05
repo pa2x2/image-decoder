@@ -7,56 +7,87 @@ plugins {
     alias(libs.plugins.tapmoc)
 }
 
-// The Android ABIs the AAR carries a library for.
-val androidAbis = listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+// The Android ABIs the AAR carries a library for. -PandroidAbis=<abi>[,<abi>…] limits a build to those, as each of the
+// workflows' parallel native jobs builds only its own.
+val androidAbis = providers.gradleProperty("androidAbis").orNull?.split(',')
+    ?: listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
 // Directory in the desktop jar the loader looks for this platform's library in (see NativeLibrary.jvm.kt).
 val desktopPlatform = "linux_x64"
+
+// -PprebuiltNativeLibraries=<directory> packages libraries built elsewhere instead of building them, from
+// <directory>/android/<abi>/ and <directory>/desktop/jni/<platform>/: the layout the workflows' native jobs upload.
+val prebuiltNativeLibraries = providers.gradleProperty("prebuiltNativeLibraries").orNull?.let(::file)
 
 val nativeSources = fileTree("native") { exclude("test/**") }
 val androidComponents = extensions.getByType<KotlinMultiplatformAndroidComponentsExtension>()
 
-val buildAndroidNativeLibraries by tasks.registering(CMakeLibraryBuild::class) {
-    val ndkVersion = libs.versions.android.ndk.get()
-    val ndk = androidComponents.sdkComponents.sdkDirectory.map { sdk ->
-        sdk.dir("ndk/$ndkVersion").also {
-            check(it.asFile.isDirectory) {
-                "NDK $ndkVersion is not installed in ${sdk.asFile}; install it with sdkmanager \"ndk;$ndkVersion\""
-            }
+/**
+ * Registers the task that provides the [kind] libraries, one per subdirectory: built with CMake and the arguments
+ * [configureArguments] gives each subdirectory, or copied from [prebuiltNativeLibraries] when that is set.
+ */
+fun nativeLibraries(
+    name: String,
+    kind: String,
+    subdirectories: List<String>,
+    configureArguments: Provider<(String) -> List<String>>,
+): TaskProvider<NativeLibrariesTask> {
+    val output = layout.buildDirectory.dir("generated/native/$kind")
+    if (prebuiltNativeLibraries != null) {
+        tasks.register<PrebuiltNativeLibraries>(name) {
+            prebuiltDirectory = prebuiltNativeLibraries.resolve(kind)
+            this.subdirectories = subdirectories
+            libraryFileName = "libimagedecoder.so"
+            outputDirectory = output
+        }
+    } else {
+        tasks.register<CMakeLibraryBuild>(name) {
+            sources.from(nativeSources)
+            sourceDirectory = layout.projectDirectory.dir("native/main")
+            target = "imagedecoder"
+            libraryFileName = "libimagedecoder.so"
+            variants = configureArguments.map { arguments -> subdirectories.associateWith(arguments) }
+            workDirectory = layout.buildDirectory.dir("native/$kind")
+            outputDirectory = output
         }
     }
-    sources.from(nativeSources)
-    sourceDirectory = layout.projectDirectory.dir("native/main")
-    target = "imagedecoder"
-    libraryFileName = "libimagedecoder.so"
-    variants = ndk.map { ndkDirectory ->
-        androidAbis.associateWith { abi ->
-            listOf(
-                "-DCMAKE_TOOLCHAIN_FILE=${ndkDirectory.file("build/cmake/android.toolchain.cmake").asFile}",
-                "-DANDROID_ABI=$abi",
-                "-DANDROID_PLATFORM=android-21",
-            )
-        }
-    }
-    workDirectory = layout.buildDirectory.dir("native/android")
-    outputDirectory = layout.buildDirectory.dir("generated/native/android")
+    return tasks.named<NativeLibrariesTask>(name)
 }
 
-val buildDesktopNativeLibrary by tasks.registering(CMakeLibraryBuild::class) {
-    sources.from(nativeSources)
-    sourceDirectory = layout.projectDirectory.dir("native/main")
-    target = "imagedecoder"
-    libraryFileName = "libimagedecoder.so"
-    variants = providers.systemProperty("java.home").map { javaHome ->
-        mapOf(
-            "jni/$desktopPlatform" to listOf(
+val buildAndroidNativeLibraries = nativeLibraries(
+    name = "buildAndroidNativeLibraries",
+    kind = "android",
+    subdirectories = androidAbis,
+    configureArguments = libs.versions.android.ndk.flatMap { ndkVersion ->
+        androidComponents.sdkComponents.sdkDirectory.map { sdk ->
+            val ndk = sdk.dir("ndk/$ndkVersion").asFile
+            check(ndk.isDirectory) {
+                "NDK $ndkVersion is not installed in ${sdk.asFile}; install it with sdkmanager \"ndk;$ndkVersion\""
+            }
+            val arguments = { abi: String ->
+                listOf(
+                    "-DCMAKE_TOOLCHAIN_FILE=${ndk.resolve("build/cmake/android.toolchain.cmake")}",
+                    "-DANDROID_ABI=$abi",
+                    "-DANDROID_PLATFORM=android-21",
+                )
+            }
+            arguments
+        }
+    },
+)
+
+val buildDesktopNativeLibrary = nativeLibraries(
+    name = "buildDesktopNativeLibrary",
+    kind = "desktop",
+    subdirectories = listOf("jni/$desktopPlatform"),
+    configureArguments = providers.systemProperty("java.home").map { javaHome ->
+        { _: String ->
+            listOf(
                 "--toolchain", layout.projectDirectory.file("native/cmake/linux-x86_64.cmake").asFile.absolutePath,
                 "-DJAVA_HOME=$javaHome",
-            ),
-        )
-    }
-    workDirectory = layout.buildDirectory.dir("native/desktop")
-    outputDirectory = layout.buildDirectory.dir("generated/native/desktop")
-}
+            )
+        }
+    },
+)
 
 kotlin {
     android {
@@ -88,7 +119,7 @@ kotlin {
 androidComponents.onVariants { variant ->
     variant.sources.jniLibs?.addGeneratedSourceDirectory(
         buildAndroidNativeLibraries,
-        CMakeLibraryBuild::outputDirectory,
+        NativeLibrariesTask::outputDirectory,
     )
 }
 

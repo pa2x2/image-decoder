@@ -1,0 +1,92 @@
+name: Native Libraries
+
+# Builds every native library in its own job, in parallel, and uploads each as an artifact: native-desktop holds
+# jni/<platform>/libimagedecoder.so and native-android-<abi> holds <abi>/libimagedecoder.so. The calling workflow
+# downloads them into <directory>/desktop and <directory>/android and packages them with
+# -PprebuiltNativeLibraries=<directory>.
+
+on:
+  workflow_call:
+
+env:
+  ZIG_VERSION: 0.17.0
+  ZIG_SHA256: 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - name: desktop
+            kind: desktop
+            task: buildDesktopNativeLibrary
+          - name: android-arm64-v8a
+            kind: android
+            task: buildAndroidNativeLibraries -PandroidAbis=arm64-v8a
+          - name: android-armeabi-v7a
+            kind: android
+            task: buildAndroidNativeLibraries -PandroidAbis=armeabi-v7a
+          - name: android-x86
+            kind: android
+            task: buildAndroidNativeLibraries -PandroidAbis=x86
+          - name: android-x86_64
+            kind: android
+            task: buildAndroidNativeLibraries -PandroidAbis=x86_64
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          java-version: 21
+          distribution: temurin
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt update
+          sudo apt install build-essential meson ninja-build nasm
+
+      - name: Install zig
+        if: matrix.kind == 'desktop'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          mkdir "$RUNNER_TEMP/zig"
+          tar -xf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components=1
+          echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
+
+      # zig keeps every compilation in its global cache, including the libc and C++ runtime it builds for the target, so
+      # a restored cache turns unchanged dependencies into cache hits. A source change misses the exact key and starts
+      # from the newest cache for the same zig version.
+      - name: Restore the zig cache
+        if: matrix.kind == 'desktop'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/zig
+          key: zig-${{ env.ZIG_VERSION }}-${{ hashFiles('library/native/**') }}
+          restore-keys: zig-${{ env.ZIG_VERSION }}-
+
+      - name: Install the Android NDK
+        if: matrix.kind == 'android'
+        run: |
+          ndk=$(sed -n 's/^android-ndk = "\(.*\)"/\1/p' gradle/libs.versions.toml)
+          echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
+
+      - name: Set up Gradle Cache and Environment
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+
+      - name: Build
+        run: ./gradlew --console=plain --warning-mode=all :library:${{ matrix.task }}
+
+      - name: Upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-${{ matrix.name }}
+          path: library/build/generated/native/${{ matrix.kind }}
+          if-no-files-found: error
+          retention-days: 7
