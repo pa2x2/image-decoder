@@ -16,7 +16,14 @@ val nativeSources = fileTree("native") { exclude("test/**") }
 val androidComponents = extensions.getByType<KotlinMultiplatformAndroidComponentsExtension>()
 
 val buildAndroidNativeLibraries by tasks.registering(CMakeLibraryBuild::class) {
-    val ndk = androidComponents.sdkComponents.ndkDirectory
+    val ndkVersion = libs.versions.android.ndk.get()
+    val ndk = androidComponents.sdkComponents.sdkDirectory.map { sdk ->
+        sdk.dir("ndk/$ndkVersion").also {
+            check(it.asFile.isDirectory) {
+                "NDK $ndkVersion is not installed in ${sdk.asFile}; install it with sdkmanager \"ndk;$ndkVersion\""
+            }
+        }
+    }
     sources.from(nativeSources)
     sourceDirectory = layout.projectDirectory.dir("native/main")
     target = "imagedecoder"

@@ -1,5 +1,8 @@
 [versions]
 android-gradle = "9.2.0"
+# The NDK the Android libraries build with. Nothing installs it on its own: the workflows install this version with
+# sdkmanager, and a local build needs it in the Android SDK.
+android-ndk = "28.2.13676358"
 junit = "5.14.4"
 kotlin-gradle = "2.3.21"
 maven-publish = "0.36.0"

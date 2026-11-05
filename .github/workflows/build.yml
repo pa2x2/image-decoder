@@ -47,6 +47,11 @@ jobs:
           tar -xf zig.tar.xz -C "$RUNNER_TEMP/zig" --strip-components=1
           echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
 
+      - name: Install the Android NDK
+        run: |
+          ndk=$(sed -n 's/^android-ndk = "\(.*\)"/\1/p' gradle/libs.versions.toml)
+          echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
+
       - name: Set up Gradle Cache and Environment
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
