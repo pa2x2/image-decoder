@@ -60,16 +60,14 @@ jobs:
           tar -xf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP/zig" --strip-components=1
           echo "$RUNNER_TEMP/zig" >> "$GITHUB_PATH"
 
-      # zig keeps every compilation in its global cache, including the libc and C++ runtime it builds for the target, so
-      # a restored cache turns unchanged dependencies into cache hits. A source change misses the exact key and starts
-      # from the newest cache for the same zig version.
+      # zig builds the runtime for its target (glibc stubs, libc++, libunwind, compiler-rt) on first use and keeps it in
+      # its global cache. Which runtime that is depends only on the zig version and the target flags in native/cmake.
       - name: Restore the zig cache
         if: matrix.kind == 'desktop'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/zig
-          key: zig-${{ env.ZIG_VERSION }}-${{ hashFiles('library/native/**') }}
-          restore-keys: zig-${{ env.ZIG_VERSION }}-
+          key: zig-${{ env.ZIG_VERSION }}-${{ hashFiles('library/native/cmake/**') }}
 
       - name: Install the Android NDK
         if: matrix.kind == 'android'
