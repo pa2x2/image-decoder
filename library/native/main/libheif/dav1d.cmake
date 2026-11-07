@@ -1,9 +1,13 @@
+set(DAV1D_VERSION 1.5.4)
+
+# Meson builds dav1d below only when its library is missing, so each version
+# builds in a directory of its own and a new pin never links an old build.
 FetchContent_Declare(dav1d
   GIT_REPOSITORY    https://github.com/videolan/dav1d.git
-  GIT_TAG           1.4.0
+  GIT_TAG           ${DAV1D_VERSION}
   CONFIGURE_COMMAND ""
   BUILD_COMMAND     ""
-  BINARY_DIR        dav1d-build
+  BINARY_DIR        dav1d-build-${DAV1D_VERSION}
   SUBBUILD_DIR      dav1d-subbuild
 )
 FetchContent_MakeAvailable(dav1d)
