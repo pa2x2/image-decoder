@@ -7,6 +7,7 @@
 #include "downsampling/box_downsampler.h"
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 
 static void png_skip_rows(png_structrp png_ptr, png_uint_32 num_rows) {
   for (png_uint_32 i = 0; i < num_rows; ++i) {

@@ -5,6 +5,7 @@
 #include "decoder_jxl.h"
 #include "downsampling/box_downsampler.h"
 #include <cstring>
+#include <stdexcept>
 
 JpegxlDecoder::JpegxlDecoder(std::shared_ptr<Stream>&& stream, bool cropBorders,
                              cmsHPROFILE targetProfile)

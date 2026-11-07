@@ -3,6 +3,7 @@
 //
 
 #include "decoder_webp.h"
+#include <stdexcept>
 
 WebpDecoder::WebpDecoder(std::shared_ptr<Stream>&& stream, bool cropBorders,
                          cmsHPROFILE targetProfile)
