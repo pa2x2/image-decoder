@@ -81,11 +81,13 @@ add_executable(decoder_host_tests
   sampled_decode_test.cpp
   straight_alpha_decode_test.cpp
   support/peak_allocation.cpp
+  webp_region_decode_test.cpp
   test_main.cpp
   incremental/fixtures/image_pattern.cpp
   incremental/fixtures/jpeg_fixture.cpp
   incremental/fixtures/jxl_fixture.cpp
   incremental/fixtures/png_fixture.cpp
+  incremental/fixtures/webp_fixture.cpp
   incremental/support/decode_harness.cpp
   ${PRODUCTION_ROOT}/alpha_premultiplication.cpp
   ${PRODUCTION_ROOT}/downsampling/adam7_box_downsampler.cpp
@@ -99,6 +101,7 @@ add_library(regular_decoders OBJECT
   ${PRODUCTION_ROOT}/decoder_jpeg.cpp
   ${PRODUCTION_ROOT}/decoder_jxl.cpp
   ${PRODUCTION_ROOT}/decoder_png.cpp
+  ${PRODUCTION_ROOT}/decoder_webp.cpp
 )
 target_compile_features(regular_decoders PRIVATE cxx_std_20)
 target_include_directories(regular_decoders PRIVATE
@@ -110,6 +113,7 @@ target_link_libraries(regular_decoders PRIVATE
   pinned_libjxl
   pinned_libpng
   pinned_lcms2
+  pinned_libwebp
 )
 
 target_compile_features(decoder_host_tests PRIVATE cxx_std_20)
@@ -131,6 +135,7 @@ target_link_libraries(decoder_host_tests PRIVATE
   pinned_libjxl
   pinned_libpng
   pinned_lcms2
+  pinned_libwebp
   ${FIXTURE_ENCODERS}
 )
 
