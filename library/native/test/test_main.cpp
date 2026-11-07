@@ -5,9 +5,11 @@
 void run_alpha_premultiplication_tests();
 void run_box_block_sums_tests();
 void run_box_downsampler_tests();
+void run_png_border_detection_tests();
 void run_sampled_decode_memory_tests();
 void run_sampled_decode_tests();
 void run_straight_alpha_decode_tests();
+void run_webp_region_decode_tests();
 
 namespace {
 
@@ -31,13 +33,18 @@ int main() {
       run_suite("box block sums", run_box_block_sums_tests);
   const bool downsamplerPassed =
       run_suite("box downsampler", run_box_downsampler_tests);
+  const bool pngBordersPassed =
+      run_suite("png border detection", run_png_border_detection_tests);
   const bool sampledPassed = run_suite("sampled decode", run_sampled_decode_tests);
   const bool sampledMemoryPassed =
       run_suite("sampled decode memory", run_sampled_decode_memory_tests);
   const bool straightAlphaPassed =
       run_suite("straight alpha decode", run_straight_alpha_decode_tests);
+  const bool webpRegionPassed =
+      run_suite("webp region decode", run_webp_region_decode_tests);
   return premultiplicationPassed && blockSumsPassed && downsamplerPassed &&
-                 sampledPassed && sampledMemoryPassed && straightAlphaPassed
+                 pngBordersPassed && sampledPassed && sampledMemoryPassed &&
+                 straightAlphaPassed && webpRegionPassed
              ? 0
              : 1;
 }

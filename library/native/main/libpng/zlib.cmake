@@ -3,7 +3,7 @@
 # library built here, and reads FindZLIB's variables as well as its target.
 FetchContent_Declare(zlib
   GIT_REPOSITORY  https://github.com/madler/zlib
-  GIT_TAG         v1.3.2
+  GIT_TAG         v1.4
   BINARY_DIR      zlib-build
   SUBBUILD_DIR    zlib-subbuild
   OVERRIDE_FIND_PACKAGE

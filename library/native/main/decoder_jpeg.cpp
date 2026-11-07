@@ -8,6 +8,7 @@
 #include "log.h"
 #include <algorithm>
 #include <cstring>
+#include <stdexcept>
 
 JpegDecoder::JpegDecoder(std::shared_ptr<Stream>&& stream, bool cropBorders,
                          cmsHPROFILE targetProfile)

@@ -6,6 +6,7 @@
 #include "alpha_premultiplication.h"
 #include "downsampling/box_downsampler.h"
 #include <cstring>
+#include <stdexcept>
 
 bool is_libheif_compatible(const uint8_t* bytes, uint32_t size) {
   //reject small invalid files that cause heif_check_filetype to return heif_filetype_maybe
@@ -29,34 +30,73 @@ HeifDecoder::HeifDecoder(std::shared_ptr<Stream>&& stream, bool cropBorders,
   this->info = parseInfo();
 }
 
-ImageInfo HeifDecoder::parseInfo() {
-  auto ctx = init_heif_context(stream.get());
-  auto handle = ctx.get_primary_image_handle();
-
-  uint32_t imageWidth = handle.get_width();
-  uint32_t imageHeight = handle.get_height();
-  Rect bounds = {.x = 0, .y = 0, .width = imageWidth, .height = imageHeight};
-  if (cropBorders) {
-    try {
-      auto img =
-          handle.decode_image(heif_colorspace_YCbCr, heif_chroma_undefined);
-      auto pixels = img.get_plane(heif_channel_Y, nullptr);
-
-      bounds = findBorders(pixels, imageWidth, imageHeight);
-    } catch (std::exception& ex) {
-      LOGW("Couldn't crop borders on a HEIF/AVIF image of size %dx%d",
-           imageWidth, imageHeight);
-    } catch (heif::Error& error) {
-      throw std::runtime_error(error.get_message());
-    }
+// Border detection reads one gray byte per pixel, while libheif pads each row
+// of its luma plane to its stride and keeps samples deeper than 8 bits in two
+// bytes. The luma plane is copied out row by row and reduced to its top 8 bits.
+static std::vector<uint8_t>
+luma_for_border_detection(heif::Image& img, uint32_t width, uint32_t height) {
+  if (static_cast<uint32_t>(img.get_width(heif_channel_Y)) < width ||
+      static_cast<uint32_t>(img.get_height(heif_channel_Y)) < height) {
+    throw std::runtime_error("HEIF luma plane is smaller than the image");
+  }
+  size_t stride;
+  const uint8_t* plane = img.get_plane2(heif_channel_Y, &stride);
+  const int bitDepth = img.get_bits_per_pixel(heif_channel_Y);
+  if (plane == nullptr || bitDepth < 1 || bitDepth > 16) {
+    throw std::runtime_error("HEIF image has no usable luma plane");
   }
 
-  return ImageInfo{
-      .imageWidth = imageWidth,
-      .imageHeight = imageHeight,
-      .isAnimated = false,
-      .bounds = bounds,
-  };
+  std::vector<uint8_t> luma(static_cast<size_t>(width) * height);
+  for (uint32_t y = 0; y < height; ++y) {
+    const uint8_t* row = plane + y * stride;
+    uint8_t* out = luma.data() + static_cast<size_t>(y) * width;
+    if (bitDepth <= 8) {
+      memcpy(out, row, width);
+    } else {
+      for (uint32_t x = 0; x < width; ++x) {
+        uint16_t sample;
+        memcpy(&sample, row + static_cast<size_t>(x) * 2, sizeof(sample));
+        out[x] = static_cast<uint8_t>(sample >> (bitDepth - 8));
+      }
+    }
+  }
+  return luma;
+}
+
+ImageInfo HeifDecoder::parseInfo() {
+  // libheif's C++ API throws heif::Error, which is not a std::exception and
+  // would otherwise escape every caller.
+  try {
+    auto ctx = init_heif_context(stream.get());
+    auto handle = ctx.get_primary_image_handle();
+
+    uint32_t imageWidth = handle.get_width();
+    uint32_t imageHeight = handle.get_height();
+    Rect bounds = {.x = 0, .y = 0, .width = imageWidth, .height = imageHeight};
+    if (cropBorders) {
+      try {
+        // The image as decoded, whose luma plane HEVC and AV1 always carry:
+        // asking for a colorspace instead makes libheif convert to it, which
+        // it refuses for YCbCr without a chroma format.
+        auto img = handle.decode_image(heif_colorspace_undefined,
+                                       heif_chroma_undefined);
+        auto luma = luma_for_border_detection(img, imageWidth, imageHeight);
+        bounds = findBorders(luma.data(), imageWidth, imageHeight);
+      } catch (std::exception& ex) {
+        LOGW("Couldn't crop borders on a HEIF/AVIF image of size %dx%d",
+             imageWidth, imageHeight);
+      }
+    }
+
+    return ImageInfo{
+        .imageWidth = imageWidth,
+        .imageHeight = imageHeight,
+        .isAnimated = false,
+        .bounds = bounds,
+    };
+  } catch (heif::Error& error) {
+    throw std::runtime_error(error.get_message());
+  }
 }
 
 cmsHPROFILE HeifDecoder::getColorProfile(heif::ImageHandle handle) {
@@ -121,8 +161,8 @@ void HeifDecoder::decode(uint8_t* outPixels, Rect outRect, Rect inRect,
     throw std::runtime_error(error.get_message());
   }
 
-  int stride;
-  uint8_t* inPixels = img.get_plane(heif_channel_interleaved, &stride);
+  size_t stride;
+  uint8_t* inPixels = img.get_plane2(heif_channel_interleaved, &stride);
 
   // libheif keeps premultiplied alpha as stored, but color management,
   // averaging and the bitmap conversion expect straight alpha.
@@ -133,9 +173,10 @@ void HeifDecoder::decode(uint8_t* outPixels, Rect outRect, Rect inRect,
     }
   }
 
-  // Calculate stride of the decoded image with the requested region
-  uint32_t inStride = stride;
-  uint32_t inStrideOffset = inRect.x * (inStride / info.imageWidth);
+  // Rows may be padded past their pixels, so the region starts 4 bytes per
+  // pixel into each row, not a share of the stride.
+  const size_t inStride = stride;
+  const size_t inStrideOffset = static_cast<size_t>(inRect.x) * 4;
   auto inPixelsPos = inPixels + inStride * inRect.y;
 
   // Calculate output stride

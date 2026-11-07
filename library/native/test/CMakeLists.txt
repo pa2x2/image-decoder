@@ -1,18 +1,19 @@
 cmake_minimum_required(VERSION 3.22)
-project(imagedecoder_host_tests LANGUAGES CXX)
+project(imagedecoder_host_tests LANGUAGES C CXX ASM)
 
 enable_testing()
 
-find_package(JPEG REQUIRED)
-find_package(PNG REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LCMS2 REQUIRED IMPORTED_TARGET lcms2)
-pkg_check_modules(JXL REQUIRED IMPORTED_TARGET libjxl)
-pkg_check_modules(WEBP REQUIRED IMPORTED_TARGET libwebp)
-pkg_check_modules(WEBPDEMUX REQUIRED IMPORTED_TARGET libwebpdemux)
-pkg_check_modules(WEBPMUX REQUIRED IMPORTED_TARGET libwebpmux)
-
 set(PRODUCTION_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../main")
+
+# The decoders under test link the libraries the shipped library pins, not the
+# host's. The HEIF decoder has no host tests, so libheif is left out.
+set(WITH_HEIF OFF)
+set(WITH_AVIF OFF)
+include(${PRODUCTION_ROOT}/pinned_libraries.cmake)
+
+# The fixtures encode their images, so they also need the encoders that the
+# shipped library leaves out.
+set(FIXTURE_ENCODERS jxl webp libwebpmux)
 
 add_executable(incremental_decoder_host_tests
   incremental/fixtures/image_pattern.cpp
@@ -54,45 +55,39 @@ target_compile_options(incremental_decoder_host_tests PRIVATE
   -Wpedantic
   -Werror
 )
-target_compile_definitions(incremental_decoder_host_tests PRIVATE
-  HAVE_LIBJPEG
-  HAVE_LIBJXL
-  HAVE_LIBPNG
-  HAVE_LIBWEBP
-)
 target_include_directories(incremental_decoder_host_tests PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/incremental"
-  "${CMAKE_CURRENT_SOURCE_DIR}/platform"
   "${PRODUCTION_ROOT}"
 )
 target_link_libraries(incremental_decoder_host_tests PRIVATE
-  JPEG::JPEG
-  PNG::PNG
-  PkgConfig::JXL
-  PkgConfig::LCMS2
-  PkgConfig::WEBP
-  PkgConfig::WEBPDEMUX
-  PkgConfig::WEBPMUX
+  pinned_libjpeg_turbo
+  pinned_libjxl
+  pinned_libpng
+  pinned_lcms2
+  pinned_libwebp
+  ${FIXTURE_ENCODERS}
 )
 
 add_test(NAME incremental_decoder_host_tests COMMAND incremental_decoder_host_tests)
 
 find_package(JNI REQUIRED)
-pkg_check_modules(JXL_THREADS REQUIRED IMPORTED_TARGET libjxl_threads)
 
 add_executable(decoder_host_tests
   alpha_premultiplication_test.cpp
   downsampling/box_block_sums_test.cpp
   downsampling/box_downsampler_test.cpp
+  png_border_detection_test.cpp
   sampled_decode_memory_test.cpp
   sampled_decode_test.cpp
   straight_alpha_decode_test.cpp
   support/peak_allocation.cpp
+  webp_region_decode_test.cpp
   test_main.cpp
   incremental/fixtures/image_pattern.cpp
   incremental/fixtures/jpeg_fixture.cpp
   incremental/fixtures/jxl_fixture.cpp
   incremental/fixtures/png_fixture.cpp
+  incremental/fixtures/webp_fixture.cpp
   incremental/support/decode_harness.cpp
   ${PRODUCTION_ROOT}/alpha_premultiplication.cpp
   ${PRODUCTION_ROOT}/downsampling/adam7_box_downsampler.cpp
@@ -106,19 +101,19 @@ add_library(regular_decoders OBJECT
   ${PRODUCTION_ROOT}/decoder_jpeg.cpp
   ${PRODUCTION_ROOT}/decoder_jxl.cpp
   ${PRODUCTION_ROOT}/decoder_png.cpp
+  ${PRODUCTION_ROOT}/decoder_webp.cpp
 )
 target_compile_features(regular_decoders PRIVATE cxx_std_20)
 target_include_directories(regular_decoders PRIVATE
-  "${CMAKE_CURRENT_SOURCE_DIR}/platform"
   "${PRODUCTION_ROOT}"
   ${JNI_INCLUDE_DIRS}
 )
 target_link_libraries(regular_decoders PRIVATE
-  JPEG::JPEG
-  PNG::PNG
-  PkgConfig::JXL
-  PkgConfig::JXL_THREADS
-  PkgConfig::LCMS2
+  pinned_libjpeg_turbo
+  pinned_libjxl
+  pinned_libpng
+  pinned_lcms2
+  pinned_libwebp
 )
 
 target_compile_features(decoder_host_tests PRIVATE cxx_std_20)
@@ -131,17 +126,17 @@ target_compile_options(decoder_host_tests PRIVATE
 target_include_directories(decoder_host_tests PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_CURRENT_SOURCE_DIR}/incremental"
-  "${CMAKE_CURRENT_SOURCE_DIR}/platform"
   "${PRODUCTION_ROOT}"
   ${JNI_INCLUDE_DIRS}
 )
 target_link_libraries(decoder_host_tests PRIVATE
   regular_decoders
-  JPEG::JPEG
-  PNG::PNG
-  PkgConfig::JXL
-  PkgConfig::JXL_THREADS
-  PkgConfig::LCMS2
+  pinned_libjpeg_turbo
+  pinned_libjxl
+  pinned_libpng
+  pinned_lcms2
+  pinned_libwebp
+  ${FIXTURE_ENCODERS}
 )
 
 add_test(NAME decoder_host_tests COMMAND decoder_host_tests)

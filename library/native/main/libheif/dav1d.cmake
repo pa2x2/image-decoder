@@ -1,9 +1,14 @@
+set(DAV1D_VERSION 1.5.4)
+
+# Meson builds dav1d below only when its library is missing, so each version
+# and compiler builds in a directory of its own, and a new pin or toolchain
+# never links an old build.
 FetchContent_Declare(dav1d
   GIT_REPOSITORY    https://github.com/videolan/dav1d.git
-  GIT_TAG           1.4.0
+  GIT_TAG           ${DAV1D_VERSION}
   CONFIGURE_COMMAND ""
   BUILD_COMMAND     ""
-  BINARY_DIR        dav1d-build
+  BINARY_DIR        dav1d-build-${DAV1D_VERSION}-${CMAKE_C_COMPILER_ID}-${CMAKE_C_COMPILER_VERSION}
   SUBBUILD_DIR      dav1d-subbuild
 )
 FetchContent_MakeAvailable(dav1d)
@@ -48,9 +53,8 @@ if(NOT EXISTS "${DAV1D_FILENAME}")
   message(FATAL_ERROR "libavif: ${DAV1D_FILENAME} is missing")
 endif()
 
-set(DAV1D_FOUND 1)
 set(DAV1D_LIBRARIES "${DAV1D_FILENAME}")
-set(DAV1D_INCLUDE_DIR
+set(DAV1D_INCLUDE_DIRS
   "${dav1d_BINARY_DIR}"
   "${dav1d_BINARY_DIR}/include"
   "${dav1d_BINARY_DIR}/include/dav1d"

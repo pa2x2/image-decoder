@@ -2,6 +2,7 @@
 #define IMAGEDECODER_INCREMENTAL_TEST_PNG_FIXTURE_H
 
 #include "fixtures/encoded_image_fixture.h"
+#include "rect.h"
 
 #include <cstdint>
 #include <vector>
@@ -15,9 +16,18 @@ struct AnimatedPngFixture {
   std::vector<uint8_t> encoded;
 };
 
+struct BorderedPngFixture {
+  Rect content;
+  std::vector<uint8_t> encoded;
+};
+
 EncodedImageFixture make_png_fixture(bool adam7);
 // Two-bit grayscale without alpha, which decoders expand to RGBA.
 EncodedImageFixture make_packed_gray_png_fixture(bool adam7);
+// Eight-bit grayscale with a tRNS chunk: a black block on white. No pixel has
+// the transparent gray level, but expanding tRNS still gives the image an
+// alpha channel that its color type does not announce.
+BorderedPngFixture make_bordered_transparent_gray_png_fixture(bool adam7);
 AnimatedPngFixture make_animated_png_fixture();
 
 #endif // IMAGEDECODER_INCREMENTAL_TEST_PNG_FIXTURE_H

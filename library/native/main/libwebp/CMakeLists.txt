@@ -1,6 +1,6 @@
 FetchContent_Declare(libwebp
   GIT_REPOSITORY  https://chromium.googlesource.com/webm/libwebp
-  GIT_TAG         v1.3.2
+  GIT_TAG         v1.6.0
   BINARY_DIR      build
   SUBBUILD_DIR    subbuild
 )
@@ -19,5 +19,7 @@ option(WEBP_ENABLE_SWAP_16BIT_CSP "" ON)
 
 FetchContent_MakeAvailable(libwebp)
 
-target_include_directories(imagedecoder PRIVATE ${libwebp_BINARY_DIR} ${libwebp_SOURCE_DIR})
-target_link_libraries(imagedecoder webpdecoder webpdemux)
+add_library(pinned_libwebp INTERFACE)
+target_include_directories(pinned_libwebp SYSTEM INTERFACE ${libwebp_BINARY_DIR} ${libwebp_SOURCE_DIR})
+target_link_libraries(pinned_libwebp INTERFACE webpdecoder webpdemux)
+target_compile_definitions(pinned_libwebp INTERFACE HAVE_LIBWEBP)

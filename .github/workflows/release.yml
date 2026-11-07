@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Read the version
         id: version
@@ -57,16 +57,16 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 21
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: 21
           distribution: temurin
 
       - name: Set up Gradle Cache and Environment
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
       - name: Download the desktop library
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -104,7 +104,15 @@ jobs:
           aar="dist/image-decoder-android-$VERSION.aar"
           unzip -o -q "$aar" 'jni/*' -d aar-libs
           for abi in arm64-v8a armeabi-v7a x86 x86_64; do
-            [ -f "aar-libs/jni/$abi/libimagedecoder.so" ] || { echo "::error::$abi missing from the AAR"; exit 1; }
+            so="aar-libs/jni/$abi/libimagedecoder.so"
+            [ -f "$so" ] || { echo "::error::$abi missing from the AAR"; exit 1; }
+            # Only the platform's own libraries, and only the JNI entry points exported.
+            needed=$(readelf -dW "$so" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' |
+              grep -v -x -E 'lib(c|m|dl|z|log|android|jnigraphics)\.so' || true)
+            [ -z "$needed" ] || { echo "::error::the $abi library needs $needed"; exit 1; }
+            exported=$(readelf -W --dyn-syms "$so" | awk '$1 ~ /^[0-9]+:$/ && $5 != "LOCAL" && $7 != "UND" && $8 != "" { print $8 }' |
+              grep -v -E '^(JNI_OnLoad|Java_)' || true)
+            [ -z "$exported" ] || { echo "::error::the $abi library exports $exported"; exit 1; }
           done
           # Android 15+ devices with 16 KB pages need 16 KB aligned LOAD segments in 64-bit libraries.
           for abi in arm64-v8a x86_64; do
