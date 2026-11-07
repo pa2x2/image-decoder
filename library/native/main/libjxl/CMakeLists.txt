@@ -1,6 +1,6 @@
 FetchContent_Declare(libjxl
   GIT_REPOSITORY https://github.com/libjxl/libjxl
-  GIT_TAG v0.10.0
+  GIT_TAG v0.12.0
   BINARY_DIR build
   SUBBUILD_DIR subbuild
 )
@@ -13,7 +13,6 @@ option(JPEGXL_ENABLE_SJPEG "" OFF)
 option(JPEGXL_ENABLE_OPENEXR "" OFF)
 option(JPEGXL_ENABLE_TRANSCODE_JPEG "" OFF)
 option(JPEGXL_ENABLE_TOOLS "" OFF)
-option(JPEGXL_ENABLE_JPEGLI "" OFF)
 option(JPEGXL_ENABLE_JNI "" OFF)
 option(JPEGXL_ENABLE_DEVTOOLS "" OFF)
 option(JPEGXL_ENABLE_BENCHMARK "" OFF)
