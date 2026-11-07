@@ -4,10 +4,6 @@
 # tests run against the versions that ship.
 include(FetchContent)
 
-# Some dependencies ask for CMake versions older than 3.5, which CMake 4 no
-# longer configures; they build unchanged under 3.5's policies.
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
-
 # Every dependency is linked into the one shared library that ships.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build the dependencies as shared libraries")
 
