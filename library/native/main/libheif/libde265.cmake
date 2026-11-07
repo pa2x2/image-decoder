@@ -11,8 +11,8 @@ option(ENABLE_DECODER "" OFF)
 
 # libde265 picks its AVX2 and AVX-512 kernels at run time with
 # __builtin_cpu_supports(), whose CPU table comes from the compiler's runtime
-# library. zig's has none, so where the check does not link, those kernels are
-# left out and the SSE ones run.
+# library. Where that library has none, as zig's lacked one before 0.17.1, the
+# check does not link, those kernels are left out and the SSE ones run.
 include(CheckCSourceCompiles)
 check_c_source_compiles(
   "int main(void) { __builtin_cpu_init(); return __builtin_cpu_supports(\"avx2\"); }"
