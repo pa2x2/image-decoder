@@ -52,9 +52,8 @@ if(NOT EXISTS "${DAV1D_FILENAME}")
   message(FATAL_ERROR "libavif: ${DAV1D_FILENAME} is missing")
 endif()
 
-set(DAV1D_FOUND 1)
 set(DAV1D_LIBRARIES "${DAV1D_FILENAME}")
-set(DAV1D_INCLUDE_DIR
+set(DAV1D_INCLUDE_DIRS
   "${dav1d_BINARY_DIR}"
   "${dav1d_BINARY_DIR}/include"
   "${dav1d_BINARY_DIR}/include/dav1d"

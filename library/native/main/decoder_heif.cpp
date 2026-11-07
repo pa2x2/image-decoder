@@ -39,8 +39,11 @@ ImageInfo HeifDecoder::parseInfo() {
   Rect bounds = {.x = 0, .y = 0, .width = imageWidth, .height = imageHeight};
   if (cropBorders) {
     try {
+      // The image as decoded, whose luma plane HEVC and AV1 always carry:
+      // asking for a colorspace instead makes libheif convert to it, which it
+      // refuses for YCbCr without a chroma format.
       auto img =
-          handle.decode_image(heif_colorspace_YCbCr, heif_chroma_undefined);
+          handle.decode_image(heif_colorspace_undefined, heif_chroma_undefined);
       auto pixels = img.get_plane(heif_channel_Y, nullptr);
 
       bounds = findBorders(pixels, imageWidth, imageHeight);
