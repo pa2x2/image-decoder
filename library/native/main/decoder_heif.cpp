@@ -31,36 +31,40 @@ HeifDecoder::HeifDecoder(std::shared_ptr<Stream>&& stream, bool cropBorders,
 }
 
 ImageInfo HeifDecoder::parseInfo() {
-  auto ctx = init_heif_context(stream.get());
-  auto handle = ctx.get_primary_image_handle();
+  // libheif's C++ API throws heif::Error, which is not a std::exception and
+  // would otherwise escape every caller.
+  try {
+    auto ctx = init_heif_context(stream.get());
+    auto handle = ctx.get_primary_image_handle();
 
-  uint32_t imageWidth = handle.get_width();
-  uint32_t imageHeight = handle.get_height();
-  Rect bounds = {.x = 0, .y = 0, .width = imageWidth, .height = imageHeight};
-  if (cropBorders) {
-    try {
-      // The image as decoded, whose luma plane HEVC and AV1 always carry:
-      // asking for a colorspace instead makes libheif convert to it, which it
-      // refuses for YCbCr without a chroma format.
-      auto img =
-          handle.decode_image(heif_colorspace_undefined, heif_chroma_undefined);
-      auto pixels = img.get_plane(heif_channel_Y, nullptr);
+    uint32_t imageWidth = handle.get_width();
+    uint32_t imageHeight = handle.get_height();
+    Rect bounds = {.x = 0, .y = 0, .width = imageWidth, .height = imageHeight};
+    if (cropBorders) {
+      try {
+        // The image as decoded, whose luma plane HEVC and AV1 always carry:
+        // asking for a colorspace instead makes libheif convert to it, which
+        // it refuses for YCbCr without a chroma format.
+        auto img = handle.decode_image(heif_colorspace_undefined,
+                                       heif_chroma_undefined);
+        auto pixels = img.get_plane(heif_channel_Y, nullptr);
 
-      bounds = findBorders(pixels, imageWidth, imageHeight);
-    } catch (std::exception& ex) {
-      LOGW("Couldn't crop borders on a HEIF/AVIF image of size %dx%d",
-           imageWidth, imageHeight);
-    } catch (heif::Error& error) {
-      throw std::runtime_error(error.get_message());
+        bounds = findBorders(pixels, imageWidth, imageHeight);
+      } catch (std::exception& ex) {
+        LOGW("Couldn't crop borders on a HEIF/AVIF image of size %dx%d",
+             imageWidth, imageHeight);
+      }
     }
-  }
 
-  return ImageInfo{
-      .imageWidth = imageWidth,
-      .imageHeight = imageHeight,
-      .isAnimated = false,
-      .bounds = bounds,
-  };
+    return ImageInfo{
+        .imageWidth = imageWidth,
+        .imageHeight = imageHeight,
+        .isAnimated = false,
+        .bounds = bounds,
+    };
+  } catch (heif::Error& error) {
+    throw std::runtime_error(error.get_message());
+  }
 }
 
 cmsHPROFILE HeifDecoder::getColorProfile(heif::ImageHandle handle) {
