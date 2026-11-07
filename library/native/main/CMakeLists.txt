@@ -82,12 +82,12 @@ endif()
 # shipped library leaves it and unused sections out.
 target_link_options(imagedecoder PRIVATE -Wl,--gc-sections -Wl,--strip-all)
 
+# Only the JNI entry points are exported: the codec libraries built in must
+# never resolve against copies other libraries load into the same process.
+target_link_options(imagedecoder PRIVATE
+  -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jni_exports.map
+)
+
 if(ANDROID)
   target_link_libraries(imagedecoder PRIVATE android jnigraphics log)
-else()
-  # Only the JNI entry points are exported: the codec libraries built in must
-  # never resolve against copies other libraries load into the same process.
-  target_link_options(imagedecoder PRIVATE
-    -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jni_exports.map
-  )
 endif()
