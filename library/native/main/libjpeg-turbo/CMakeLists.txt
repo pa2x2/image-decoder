@@ -12,5 +12,7 @@ option(REQUIRE_SIMD "" 1)
 
 FetchContent_MakeAvailable(libjpeg-turbo)
 
-target_include_directories(imagedecoder PRIVATE ${libjpeg-turbo_BINARY_DIR} ${libjpeg-turbo_SOURCE_DIR})
-target_link_libraries(imagedecoder jpeg-static)
+add_library(pinned_libjpeg_turbo INTERFACE)
+target_include_directories(pinned_libjpeg_turbo SYSTEM INTERFACE ${libjpeg-turbo_BINARY_DIR} ${libjpeg-turbo_SOURCE_DIR})
+target_link_libraries(pinned_libjpeg_turbo INTERFACE jpeg-static)
+target_compile_definitions(pinned_libjpeg_turbo INTERFACE HAVE_LIBJPEG)

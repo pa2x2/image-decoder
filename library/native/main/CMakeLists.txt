@@ -1,19 +1,9 @@
 cmake_minimum_required(VERSION 3.14)
 project(imagedecoder C CXX ASM)
-include(FetchContent)
 
 set(CMAKE_BUILD_TYPE Release)
 
-# Some dependencies ask for CMake versions older than 3.5, which CMake 4 no
-# longer configures; they build unchanged under 3.5's policies.
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
-
-option(WITH_JPEG "Include JPEG decoder" ON)
-option(WITH_PNG "Include PNG decoder" ON)
-option(WITH_WEBP "Include WebP decoder" ON)
-option(WITH_HEIF "Include HEIF decoder" ON)
-option(WITH_AVIF "Include AVIF decoder" ON)
-option(WITH_JXL "Include JXL decoder" ON)
+include(pinned_libraries.cmake)
 
 add_library(imagedecoder SHARED
   alpha_premultiplication.cpp
@@ -37,10 +27,6 @@ add_library(imagedecoder SHARED
 
 target_include_directories(imagedecoder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Change the default path of fetch content to avoid downloading the same dependencies per architecture
-get_filename_component(deps "../_deps" REALPATH BASE_DIR "${CMAKE_BINARY_DIR}")
-set(FETCHCONTENT_BASE_DIR ${deps})
-
 if(ANDROID)
   target_sources(imagedecoder PRIVATE pixel_target_android.cpp)
 else()
@@ -55,19 +41,17 @@ else()
   )
 endif()
 
-add_subdirectory(lcms)
+target_link_libraries(imagedecoder PRIVATE pinned_lcms2)
 
 if(WITH_JPEG)
-  add_subdirectory(libjpeg-turbo)
-  add_definitions(-DHAVE_LIBJPEG)
+  target_link_libraries(imagedecoder PRIVATE pinned_libjpeg_turbo)
   target_sources(imagedecoder PRIVATE
     decoder_jpeg.cpp
     incremental/jpeg_decoder.cpp
   )
 endif()
 if(WITH_PNG)
-  add_subdirectory(libpng)
-  add_definitions(-DHAVE_LIBPNG)
+  target_link_libraries(imagedecoder PRIVATE pinned_libpng)
   target_sources(imagedecoder PRIVATE
     decoder_png.cpp
     downsampling/adam7_box_downsampler.cpp
@@ -75,8 +59,7 @@ if(WITH_PNG)
   )
 endif()
 if(WITH_WEBP)
-  add_subdirectory(libwebp)
-  add_definitions(-DHAVE_LIBWEBP)
+  target_link_libraries(imagedecoder PRIVATE pinned_libwebp)
   target_sources(imagedecoder PRIVATE
     decoder_webp.cpp
     incremental/animated_webp_decoder.cpp
@@ -84,13 +67,11 @@ if(WITH_WEBP)
   )
 endif()
 if(WITH_HEIF OR WITH_AVIF)
-  add_subdirectory(libheif)
-  add_definitions(-DHAVE_LIBHEIF)
+  target_link_libraries(imagedecoder PRIVATE pinned_libheif)
   target_sources(imagedecoder PRIVATE decoder_heif.cpp)
 endif()
 if(WITH_JXL)
-  add_subdirectory(libjxl)
-  add_definitions(-DHAVE_LIBJXL)
+  target_link_libraries(imagedecoder PRIVATE pinned_libjxl)
   target_sources(imagedecoder PRIVATE
     decoder_jxl.cpp
     incremental/jxl_decoder.cpp
@@ -102,7 +83,7 @@ endif()
 target_link_options(imagedecoder PRIVATE -Wl,--gc-sections -Wl,--strip-all)
 
 if(ANDROID)
-  target_link_libraries(imagedecoder android jnigraphics log)
+  target_link_libraries(imagedecoder PRIVATE android jnigraphics log)
 else()
   # Only the JNI entry points are exported: the codec libraries built in must
   # never resolve against copies other libraries load into the same process.

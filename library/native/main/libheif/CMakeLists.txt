@@ -14,7 +14,6 @@ if(WITH_AVIF)
   include(dav1d.cmake)
 endif()
 
-option(BUILD_SHARED_LIBS "" OFF)
 option(WITH_EXAMPLES "" OFF)
 option(WITH_DAV1D "" OFF)
 option(WITH_LIBDE265 "" OFF)
@@ -24,5 +23,7 @@ option(WITH_RAV1E "" OFF)
 
 FetchContent_MakeAvailable(libheif)
 
-target_include_directories(imagedecoder PRIVATE ${libheif_BINARY_DIR} ${libheif_SOURCE_DIR})
-target_link_libraries(imagedecoder heif)
+add_library(pinned_libheif INTERFACE)
+target_include_directories(pinned_libheif SYSTEM INTERFACE ${libheif_BINARY_DIR} ${libheif_SOURCE_DIR})
+target_link_libraries(pinned_libheif INTERFACE heif)
+target_compile_definitions(pinned_libheif INTERFACE HAVE_LIBHEIF)

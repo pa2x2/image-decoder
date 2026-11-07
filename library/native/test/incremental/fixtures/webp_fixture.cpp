@@ -3,9 +3,9 @@
 #include "fixtures/image_pattern.h"
 #include "support/decode_harness.h"
 
-#include <webp/decode.h>
-#include <webp/encode.h>
-#include <webp/mux.h>
+#include <src/webp/decode.h>
+#include <src/webp/encode.h>
+#include <src/webp/mux.h>
 
 #include <cstddef>
 #include <memory>

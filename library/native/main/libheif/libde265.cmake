@@ -5,7 +5,6 @@ FetchContent_Declare(libde265
   SUBBUILD_DIR    libde265-subbuild
 )
 
-option(BUILD_SHARED_LIBS "" OFF)
 option(ENABLE_SDL "" OFF)
 if (ANDROID AND NOT ANDROID_ABI STREQUAL "x86" AND NOT ANDROID_ABI STREQUAL "x86_64")
   option(DISABLE_SSE "" ON)
