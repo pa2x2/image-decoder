@@ -82,8 +82,9 @@ std::vector<uint8_t> make_frame_control(uint32_t sequence,
 
 // `pixels` holds one byte per sample; samples narrower than a byte are packed
 // by the writer.
-std::vector<uint8_t> encode_png(const std::vector<uint8_t>& pixels,
-                                int colorType, int bitDepth, bool adam7) {
+std::vector<uint8_t>
+encode_png(const std::vector<uint8_t>& pixels, int colorType, int bitDepth,
+           bool adam7, const png_color_16* transparentColor = nullptr) {
   std::vector<uint8_t> output;
   png_structp writer =
       png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
@@ -102,6 +103,9 @@ std::vector<uint8_t> encode_png(const std::vector<uint8_t>& pixels,
   png_set_IHDR(writer, info, kFixtureWidth, kFixtureHeight, bitDepth, colorType,
                adam7 ? PNG_INTERLACE_ADAM7 : PNG_INTERLACE_NONE,
                PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+  if (transparentColor != nullptr) {
+    png_set_tRNS(writer, info, nullptr, 0, transparentColor);
+  }
   png_write_info(writer, info);
   if (bitDepth < 8) {
     png_set_packing(writer);
@@ -158,6 +162,24 @@ EncodedImageFixture make_packed_gray_png_fixture(bool adam7) {
       .height = kFixtureHeight,
       .expectedRgba = std::move(expectedRgba),
       .encoded = encode_png(levels, PNG_COLOR_TYPE_GRAY, bitDepth, adam7),
+  };
+}
+
+BorderedPngFixture make_bordered_transparent_gray_png_fixture(bool adam7) {
+  constexpr Rect content = {.x = 40, .y = 96, .width = 112, .height = 192};
+  std::vector<uint8_t> levels(
+      static_cast<size_t>(kFixtureWidth) * kFixtureHeight, 255);
+  for (uint32_t y = content.y; y < content.y + content.height; ++y) {
+    for (uint32_t x = content.x; x < content.x + content.width; ++x) {
+      levels[static_cast<size_t>(y) * kFixtureWidth + x] = 0;
+    }
+  }
+  png_color_16 transparentGray{};
+  transparentGray.gray = 128;
+  return BorderedPngFixture{
+      .content = content,
+      .encoded =
+          encode_png(levels, PNG_COLOR_TYPE_GRAY, 8, adam7, &transparentGray),
   };
 }
 

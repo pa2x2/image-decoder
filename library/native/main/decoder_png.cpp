@@ -6,7 +6,9 @@
 #include "downsampling/adam7_box_downsampler.h"
 #include "downsampling/box_downsampler.h"
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
+#include <new>
 #include <stdexcept>
 
 static void png_skip_rows(png_structrp png_ptr, png_uint_32 num_rows) {
@@ -76,8 +78,6 @@ ImageInfo PngDecoder::parseInfo() {
   Rect bounds = {.x = 0, .y = 0, .width = imageWidth, .height = imageHeight};
   if (cropBorders) {
     try {
-      auto pixels = std::make_unique<uint8_t[]>(imageWidth * imageHeight);
-
       uint8_t colorType = png_get_color_type(png, pinfo);
       uint8_t bitDepth = png_get_bit_depth(png, pinfo);
 
@@ -87,12 +87,23 @@ ImageInfo PngDecoder::parseInfo() {
       }
       if (colorType & (uint8_t)PNG_COLOR_MASK_COLOR) {
         png_set_rgb_to_gray(png, 1, -1, -1);
-        png_set_strip_alpha(png);
-      } else if (colorType & (uint8_t)PNG_COLOR_MASK_ALPHA) {
-        png_set_strip_alpha(png);
       }
+      // Expanding also turns a tRNS chunk into an alpha channel, which the
+      // color type does not announce, so every image has its alpha stripped.
+      png_set_strip_alpha(png);
 
       int32_t passes = png_set_interlace_handling(png);
+      png_read_update_info(png, pinfo);
+      // Border detection reads one gray byte per pixel, and the buffer below
+      // holds exactly that.
+      if (png_get_rowbytes(png, pinfo) != imageWidth) {
+        throw std::logic_error("PNG border detection rows are not 8-bit gray");
+      }
+      if (imageHeight > SIZE_MAX / imageWidth) {
+        throw std::bad_alloc();
+      }
+      auto pixels = std::make_unique<uint8_t[]>(
+          static_cast<size_t>(imageWidth) * imageHeight);
 
       uint8_t* pixelsPos;
       while (--passes >= 0) {

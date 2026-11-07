@@ -76,6 +76,7 @@ add_executable(decoder_host_tests
   alpha_premultiplication_test.cpp
   downsampling/box_block_sums_test.cpp
   downsampling/box_downsampler_test.cpp
+  png_border_detection_test.cpp
   sampled_decode_memory_test.cpp
   sampled_decode_test.cpp
   straight_alpha_decode_test.cpp
