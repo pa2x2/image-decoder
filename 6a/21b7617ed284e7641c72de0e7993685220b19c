@@ -1,0 +1,19 @@
+library/native/main/libheif/dav1d.cmake
+  s_a6ac6921d84a1c::t_a3a59382fcc51c 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a21b7617ed284e7641c72de0e7993685220b19c",
+  "prompts": {},
+  "sessions": {
+    "s_a6ac6921d84a1c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "03d6573c-b0c8-42e4-9ccb-aecd57616f62",
+        "model": "unknown"
+      },
+      "human_author": "Kiryl Kvit <kiryl.kvit@gmail.com>"
+    }
+  }
+}
