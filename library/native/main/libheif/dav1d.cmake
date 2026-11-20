@@ -1,4 +1,4 @@
-set(DAV1D_VERSION 1.5.4)
+set(DAV1D_VERSION 1.5.5)
 
 # Meson builds dav1d below only when its library is missing, so each version
 # and compiler builds in a directory of its own, and a new pin or toolchain
