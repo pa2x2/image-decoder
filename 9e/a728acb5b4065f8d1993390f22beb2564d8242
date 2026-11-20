@@ -1,0 +1,14 @@
+gradle.properties
+  h_c1c6febaef16c3 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ea728acb5b4065f8d1993390f22beb2564d8242",
+  "prompts": {},
+  "humans": {
+    "h_c1c6febaef16c3": {
+      "author": "Kiryl Kvit <kiryl.kvit@gmail.com>"
+    }
+  }
+}
